@@ -18,4 +18,17 @@
   BootFiles    = 'C:\BootFiles'    # on the domain controller, served as http://<DcAddress>/boot/
   TftpRoot     = 'C:\RemoteInstall' # WDS's, which its TFTP server serves
   SanDataDrive = 'D'               # on the storage server: images and child disks under D:\iSCSI
+
+  # The golden image (image/, docs/image.md)
+  InstallShare = 'C:\Install'      # on the domain controller, shared as \\<DcAddress>\install for WinPE
+  ShareAccount = 'winpe'           # the domain account WinPE maps the share with. Enabled only during a build
+  ImageIndex   = '1'               # Windows 11 Enterprise LTSC 2024, in the media's install.wim
+  ProductKey   = 'M7XTQ-FN8P6-TTKYV-9D4CC-J462D' # its KMS client key (learn.microsoft.com, "KMS client activation")
+  ImageSizeGB  = '64'              # the golden image's size; the VHDX grows as it's written
+  ImageUser    = 'admin'           # the image's local administrator, with IMAGE_PASSWORD from .env
+  Locale       = 'en-AU'           # formats and keyboard
+  UILanguage   = 'en-US'           # display: one the media has
+  TimeZone     = 'Cen. Australia Standard Time'
+  BuildVm      = 'dl-build-1'      # the Proxmox VM that builds images (lab/lab.auto.tfvars)
+  IqnPrefix    = 'iqn.2026-10.com.unvslab.adl.diskless' # initiators are <IqnPrefix>:<VM name>
 }

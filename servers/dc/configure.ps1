@@ -28,6 +28,9 @@ while ($true) {
 }
 Wait-ServicingIdle
 
+Step 'Windows Update: installs and restarts only when asked'
+Set-UpdatePolicy
+
 Step "admin as a domain and enterprise admin"
 # admin came over from the local accounts into the domain's Administrators group only. Enterprise Admins can
 # authorise DHCP servers, and the later phases run as admin.
@@ -118,10 +121,11 @@ New-Item -ItemType Directory -Force "$($s.BootFiles)\clients" | Out-Null
 if (-not (Get-WebVirtualDirectory -Site 'Default Web Site' -Name boot)) {
   New-WebVirtualDirectory -Site 'Default Web Site' -Name boot -PhysicalPath $s.BootFiles | Out-Null
 }
-# IIS serves only the extensions it has MIME types for. "." is files without one, like wimboot. WinPE needs .wim,
-# .sdi and .bcd (phase 2).
+# IIS serves only the extensions it has MIME types for. "." is files without one, like wimboot and WinPE's BCD. WinPE
+# needs .wim and .sdi, and fetches its jobs as .cmd (phase 2).
 $types = [ordered]@{ '.ipxe' = 'text/plain'; '.efi' = 'application/octet-stream'; '.' = 'application/octet-stream'
-  '.wim' = 'application/octet-stream'; '.sdi' = 'application/octet-stream'; '.bcd' = 'application/octet-stream' }
+  '.wim' = 'application/octet-stream'; '.sdi' = 'application/octet-stream'; '.bcd' = 'application/octet-stream'
+  '.cmd' = 'text/plain' }
 $at = @{ PSPath = 'MACHINE/WEBROOT/APPHOST'; Location = 'Default Web Site/boot'; Filter = 'system.webServer/staticContent' }
 foreach ($ext in $types.Keys) {
   if (-not (Get-WebConfigurationProperty @at -Name collection | Where-Object fileExtension -eq $ext)) {

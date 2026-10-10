@@ -8,7 +8,8 @@ Phase 0 of the [plan](../PLAN.md): the Proxmox pool and permissions, the flat ne
 |---|---|---|---|---|---|
 | vm-dl-dc-1 | 5010 | Full clone of 9021 `tpl-win2025`, with the Windows 11 LTSC ISO in its CD drive | 2 vCPU, 4 GiB, 64 GB | 10.31.0.10 | Running, named, on its static address |
 | vm-dl-san-1 | 5020 | Full clone of 9021, plus a 200 GB data disk | 4 vCPU, 8 GiB, 64 GB + 200 GB | 10.31.0.20 | Running, named, on its static address |
-| dl-ws-1 to dl-ws-3 | 5031-5033 | Empty: UEFI without Secure Boot keys, TPM 2.0, a VirtIO RNG, no disk, boots from `net0` | 2 vCPU, 4 GiB | DHCP reservation for 10.31.1.1-.3 (phase 3) | Stopped |
+| dl-ws-1 to dl-ws-3 | 5031-5033 | Empty: UEFI without Secure Boot keys, TPM 2.0, a VirtIO RNG, no disk, boots from `net0`. NICs: virtio, e1000e and vmxnet3, for the NIC test | 2 vCPU, 4 GiB | DHCP reservation for 10.31.1.1-.3 (phase 3) | Stopped |
+| dl-build-1 | 5030 | Empty, like the clients, with an e1000e NIC. Builds golden images ([image](image.md)) | 4 vCPU, 4 GiB | DHCP reservation for 10.31.1.250, made by the build | Stopped |
 
 - **Fixed MACs:** `02:00` followed by the address in hex (10.31.1.1 is `02:00:0A:1F:01:01`). DHCP reservations and ARP caches keep working across a rebuild. `terraform output clients` prints them for `clients.csv`.
 - **Clients stay stopped.** Start them by hand for a test, so they use no memory otherwise.
@@ -19,6 +20,7 @@ Phase 0 of the [plan](../PLAN.md): the Proxmox pool and permissions, the flat ne
 - **Clients have a random number generator** (`rng0`, from the host's `/dev/urandom`). Since 2025, OVMF offers no network boot without one: its network stack needs the entropy. Without it the firmware lists no PXE option at all, sends no DHCP request, and stops at "No bootable option or device was found". Physical machines have a hardware RNG.
 - **Clients have no tags.** Proxmox checks tag permission on `/vms/<id>` before a new VM joins its pool, so the pool's ACL doesn't cover it. Servers are clones, which are already in the pool when tagged.
 - **One CD drive per VM.** The bpg provider (0.116) refuses a second `cdrom` block. So virtio-win is downloaded where it's needed (phase 2), rather than attached.
+- **The Proxmox API from scripts.** [lab/pve.sh](../lab/pve.sh) calls it with the same token as Terraform: `bootstrap-server.sh` for the guest agent, and the image scripts to start, stop and wait for VMs.
 
 ## Prerequisites
 
@@ -91,6 +93,6 @@ All in WSL in `lab/`, with `diskless.env` loaded.
 |---|---|
 | Start or stop a client | `qm start 5031` as root on the node, or from the Proxmox UI |
 | Rebuild a server from scratch | `terraform apply -replace='proxmox_virtual_environment_vm.server["vm-dl-dc-1"]'`. Its bootstrap runs again |
-| Re-run a server's bootstrap | `terraform apply -replace='terraform_data.bootstrap["vm-dl-dc-1"]'` |
+| Re-run a server's bootstrap | `terraform apply -replace='terraform_data.bootstrap["vm-dl-dc-1"]'`. Before phase 1 only: it sets the server's DNS back to the gateway |
 | Change a client's NIC model (PLAN.md, NIC independence) | Edit its `nic_model` in `lab.auto.tfvars` and `terraform apply`. Its MAC stays the same |
 | Remove everything | `terraform destroy`. Then, as root on the node: `pveum user delete diskless@pve`, `pveum pool delete diskless`, `pveum role delete Diskless` and `pveum role delete DisklessIsoReader` |

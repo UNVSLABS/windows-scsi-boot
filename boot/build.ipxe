@@ -1,0 +1,23 @@
+#!ipxe
+# The build VM's boot while image/build.sh builds a golden image. Its own script, clients/<mac>.ipxe, which build.sh
+# writes for the build, sets initiator-iqn and root-path (the build target), then chains this. Windows setup restarts
+# several times: once it has written Windows' boot files to the disk, the disk boots. Until then, sanboot fails and
+# WinPE starts, with the disk attached. WinPE fetches the build's job, jobs/<mac>.cmd, which installs Windows onto it.
+
+echo Building a golden image on ${root-path}
+sanboot ${root-path} || goto install
+exit
+
+:install
+echo No Windows on the disk yet: installing it through WinPE
+sanhook ${root-path} || goto failed
+kernel wimboot || goto failed
+initrd winpe/BCD BCD || goto failed
+initrd winpe/boot.sdi boot.sdi || goto failed
+initrd winpe/boot.wim boot.wim || goto failed
+boot || goto failed
+
+:failed
+echo The build's boot failed. Press a key for an iPXE shell.
+prompt
+shell

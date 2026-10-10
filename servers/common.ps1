@@ -46,6 +46,15 @@ function Wait-ServicingIdle {
   if (Test-RestartPending) { Restart-ForRerun 'updates are waiting for a restart' }
 }
 
+# Windows Update downloads updates, but installs them, and restarts, only when an admin says so. Left to itself, it
+# restarted the storage server twice one night, and every client booted from it hangs while it's away.
+function Set-UpdatePolicy {
+  $au = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU'
+  New-Item $au -Force | Out-Null
+  Set-ItemProperty $au NoAutoUpdate 0 -Type DWord
+  Set-ItemProperty $au AUOptions 7 -Type DWord # download automatically; notify to install, and to restart
+}
+
 function Install-Feature([string[]]$Name) {
   try { $result = Install-WindowsFeature $Name -IncludeManagementTools }
   catch {

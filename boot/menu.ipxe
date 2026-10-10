@@ -3,11 +3,19 @@
 
 :menu
 menu Diskless boot: ${net0/mac} (${net0/ip}) is not a client
+item --key p winpe   WinPE
 item --key m memtest Memtest86+
 item --key s shell   iPXE shell
 item --key x exit    Boot from the next device
 choose --timeout 30000 --default exit target || goto exit
 goto ${target}
+
+:winpe
+kernel wimboot || goto failed
+initrd winpe/BCD BCD || goto failed
+initrd winpe/boot.sdi boot.sdi || goto failed
+initrd winpe/boot.wim boot.wim || goto failed
+boot || goto failed
 
 :memtest
 chain memtest.efi || goto failed

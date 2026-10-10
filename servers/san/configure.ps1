@@ -7,8 +7,15 @@ $ProgressPreference = 'SilentlyContinue'
 . "$PSScriptRoot\..\common.ps1"
 Wait-ServicingIdle
 
+Step 'Windows Update: installs and restarts only when asked'
+Set-UpdatePolicy
+
 Step 'iSCSI Target Server'
 Install-Feature FS-iSCSITarget-Server
+# Started at once, the service can start before the static address is usable, fail to bind to it (event 10, error
+# 10049), and then listen nowhere. Delayed, it starts a couple of minutes after boot.
+sc.exe config WinTarget start= delayed-auto | Out-Null
+if (-not (Get-NetTCPConnection -LocalPort 3260 -State Listen -ErrorAction SilentlyContinue)) { Restart-Service WinTarget }
 
 Step "data disk as $($s.SanDataDrive):"
 $label = 'iSCSI'
@@ -28,4 +35,7 @@ foreach ($dir in 'images', 'clients') { New-Item -ItemType Directory -Force "$($
 Step 'check'
 Get-WindowsFeature FS-iSCSITarget-Server | ForEach-Object { "$($_.Name): $($_.InstallState)" }
 Get-Volume -FileSystemLabel $label | ForEach-Object { "$($_.DriveLetter): $($_.FileSystem) $([math]::Round($_.Size / 1GB)) GB" }
-Get-Service WinTarget | ForEach-Object { "service $($_.Name): $($_.Status)" }
+$delayed = (Get-ItemProperty HKLM:\SYSTEM\CurrentControlSet\Services\WinTarget).DelayedAutostart -eq 1
+Get-Service WinTarget | ForEach-Object { "service $($_.Name): $($_.Status), $($_.StartType)$(if ($delayed) { ', delayed' })" }
+Get-NetTCPConnection -LocalPort 3260 -State Listen | ForEach-Object { "listening on $($_.LocalAddress):3260" }
+"Windows Update: AUOptions $((Get-ItemProperty HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU).AUOptions)"

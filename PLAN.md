@@ -20,7 +20,7 @@ Not covered: CHAP authentication, backups, Windows activation, and user data on 
 |---|---|---|
 | 0 | Environment setup, repo, Terraform for the VMs | **Done 2026-10-10** ([docs/environment.md](docs/environment.md#verified)) |
 | 1 | Domain controller with DHCP and boot files; storage server with iSCSI Target | **Done 2026-10-10** ([docs/servers.md](docs/servers.md#verified)) |
-| 2 | Golden image, and the NIC-independence test | Not started |
+| 2 | Golden image, and the NIC-independence test | **In progress, blocked:** the build boots WinPE with its iSCSI disk described, but WinPE doesn't connect it ([docs/image.md](docs/image.md#blocked-winpe-doesnt-connect-the-iscsi-disk)) |
 | 3 | Clients on differencing disks, joined to the domain | Not started |
 | 4 | Image updates and failure behaviour | Not started |
 
@@ -63,7 +63,7 @@ Client (VM or physical)                              vm-dl-dc-1: AD DS, DNS, DHC
 | Network | Bridge `vmbr0`, VLAN 31, 10.31.0.0/16 | One flat network: storage and normal traffic share each machine's single NIC |
 | Gateway | 10.31.0.1 (UniFi), with its DHCP off | Internet for clients. The domain controller is the only DHCP server |
 | Server template | VMID 9021 `tpl-win2025`: Windows Server 2025 Standard, sysprepped, OpenSSH with key logins. Built by the lab repo's [images/windows/](../lab/docs/windows-images.md) | Both servers are full clones of it |
-| Install media | The Windows 11 Enterprise LTSC 2024 ISO on `local`, in the domain controller's CD drive. virtio-win is downloaded where it's needed: the provider allows one CD drive per VM | WinPE and Windows setup for the golden image |
+| Install media | The Windows 11 Enterprise LTSC 2024 ISO on `local`, in the domain controller's CD drive. The driver pack (virtio-win and others) is downloaded by the domain controller: the provider allows one CD drive per VM | WinPE and Windows setup for the golden image |
 | AD domain | `diskless.adl.unvslab.com`, NetBIOS name `DISKLESS` | The clients' domain. A subdomain of a domain you own: not `.local`, a single label, or your public apex |
 
 ### Network requirements
@@ -81,7 +81,8 @@ Client (VM or physical)                              vm-dl-dc-1: AD DS, DNS, DHC
 |---|---|---|---|
 | vm-dl-dc-1 | Full clone of 9021 | 2 vCPU, 4 GiB, 64 GB | 10.31.0.10, MAC `02:00:0A:1F:00:0A` |
 | vm-dl-san-1 | Full clone of 9021 | 4 vCPU, 8 GiB, 64 GB OS disk + 200 GB thin data disk | 10.31.0.20, MAC `02:00:0A:1F:00:14` |
-| dl-ws-1 to dl-ws-3 | Empty: UEFI without Secure Boot keys, TPM 2.0, a VirtIO RNG, no disk, boots from the network | 2 vCPU, 4 GiB each | DHCP reservation per fixed MAC |
+| dl-ws-1 to dl-ws-3 | Empty: UEFI without Secure Boot keys, TPM 2.0, a VirtIO RNG, no disk, boots from the network. NICs virtio, e1000e and vmxnet3 | 2 vCPU, 4 GiB each | DHCP reservation per fixed MAC |
+| dl-build-1 | Empty, like the clients, with an Intel e1000e NIC. Builds golden images | 4 vCPU, 4 GiB | DHCP reservation, 10.31.1.250 |
 
 - **Fixed MACs** are `02:00` followed by the IPv4 address in hex.
 - **Full clones, not linked,** because the servers are long-lived and shouldn't depend on the template.
@@ -172,19 +173,28 @@ The domain-join files hold machine passwords. They're made when needed and delet
 - Microsoft says an image installed on a local disk can't boot from iSCSI at all, because drivers load in a different order. That's why the golden image is installed onto an iSCSI LUN.
 - The documented way to boot on other NICs is from the Windows 7 era. It edited a registry list (the Critical Device Database) that Windows 8 and later no longer have.
 
+**Found in phase 2** ([docs/image.md](docs/image.md#nic-independence)):
+- **The NIC's driver must declare `BootFlags` 0x1 in its INF** for Windows to use it for iSCSI at all. Intel's drivers do. virtio's NetKVM and vmxnet3's don't. So the master is built on an Intel NIC.
+- **Every machine's NIC is a new device to the image,** even with the same model. Most NICs, QEMU's e1000e and vmxnet3 included, carry a serial number made from the MAC, and Windows builds the device's ID from it. Only virtio-net doesn't.
+- **Windows has a driver's service only once it has installed a device for it.** So setting `BootFlags` can't help a NIC the image has never installed. Windows setup makes its boot NIC with an undocumented `dism /Add-NetAdapter`, which can also run per client, from WinPE.
+
 **What to test:**
 1. **Include drivers for every NIC we target:** Windows' built-in ones, virtio, and vendor packs for physical NICs.
-2. **Mark each NIC driver to load early when booting over the network.** Microsoft documents this as `BootFlags` 0x1 (`CM_SERVICE_NETWORK_BOOT_LOAD`), promoted to boot-start on network boot.
-3. **Build the master on a virtio NIC, then boot it on other NIC models:**
+2. **Build the master on an Intel NIC, then boot it on each NIC model,** with a new MAC each time:
 
 | Client NIC | Driver | What it shows |
 |---|---|---|
-| virtio | `netkvm`, added | Baseline: the NIC the image was installed on |
-| Intel e1000e | built into Windows | A different NIC, with a driver Windows already has |
-| VMware vmxnet3 | added from a vendor package | A different NIC, with a driver we added, as for a physical NIC |
+| Intel e1000e | the build's | The build's NIC model on a new machine, as a physical fleet of one model |
+| virtio | `netkvm`, added | A different NIC, whose driver doesn't declare network boot |
+| VMware vmxnet3 | added, newer than the one built in | A different NIC, with a driver we added, as for a physical NIC |
 
-- **Variants:** as setup leaves it, then with `BootFlags` 0x1 on all NIC services, then also with the start type set to boot-start. Record which variant works.
-- **If all three NICs boot,** a physical NIC is the same problem with a different driver.
+- **Variants:**
+  1. as setup leaves it;
+  2. with `BootFlags` 0x1 on the NIC services;
+  3. also with the start type set to boot-start;
+  4. after WinPE on the client runs `dism /Add-NetAdapter` on its disk.
+
+  Record which variant works.
 - **Fallback:** build the golden image on a physical workstation with the same scripts. Each NIC family then needs its own image.
 
 ## Phases
@@ -210,7 +220,7 @@ The domain-join files hold machine passwords. They're made when needed and delet
    - Build WinPE (Windows ADK) with the NIC drivers, so it can reach the iSCSI target.
    - A blank VHDX on the build target. The build VM boots WinPE through wimboot, with the target attached by `sanhook`.
    - WinPE runs setup unattended from the install share onto the iSCSI disk.
-   - It reuses the answer files and scripts from the lab repo's `images/windows/`, adapted for the iSCSI disk: `autounattend.xml`, `firstlogon.ps1`, `generalize.ps1`, `sysprep.xml` and `SetupComplete.cmd`.
+   - It reuses the answer files and scripts from the lab repo's `images/windows/`, adapted for the iSCSI disk: `autounattend.xml`, `firstlogon.ps1`, `generalize.ps1` and `sysprep.xml`. `SetupComplete.cmd` isn't needed: Windows Update stays off in the image.
    - Sysprep, then set `golden-v1` read-only. Then the [NIC test](#nic-independence).
    - *Done when:* `golden-v1` boots clients over iSCSI, and the NIC result is recorded.
 3. **Clients**
@@ -241,6 +251,8 @@ The domain-join files hold machine passwords. They're made when needed and delet
 | Network | One flat network, one NIC per machine | No separate storage network, so ordinary single-NIC workstations work |
 | Secure Boot | Off on clients | The stock `snponly.efi` is unsigned. The signed iPXE shim is the path to turning it on |
 | Tooling | Terraform for VMs; PowerShell over SSH for everything in Windows. No Packer | Few moving parts, and every step can be re-run |
+| Build NIC | Intel (an e1000e in the lab), not virtio | Windows uses a NIC for iSCSI only if its driver declares network boot (`BootFlags`). NetKVM's doesn't; Intel's does |
+| Server updates | Downloaded automatically, installed and restarted by an admin | Clients hang while the storage server restarts, so restarts must be planned |
 
 ## Risks
 
@@ -248,6 +260,7 @@ The domain-join files hold machine passwords. They're made when needed and delet
 |---|---|---|
 | One image may not boot on different NICs | Images built in VMs can't serve physical workstations directly | Tested early in phase 2. Fallback: build the image on a physical workstation |
 | Windows 11 booting from iSCSI isn't officially supported; Microsoft's docs cover Windows Server | No vendor support | Widely used with iPXE. Setup onto iSCSI is checked first in phase 2 |
+| WinPE doesn't connect the iSCSI disk in the iBFT (**happened**, phase 2) | Setup can't install onto iSCSI, so there's no golden image | Not yet solved ([docs/image.md](docs/image.md#blocked-winpe-doesnt-connect-the-iscsi-disk)). Still to try: legacy BIOS boot, the media's own WinPE, or installing onto a local disk and moving it to iSCSI |
 | Windows 11 setup may refuse to install with Secure Boot off | The golden image build stops | Setup's hardware-check bypass in WinPE, or Secure Boot on with the signed iPXE shim |
 | The storage server goes away | Every running client hangs | Behaviour and recovery written down in phase 4 |
 | A write to a golden image | Every child built on it breaks | Read-only attribute and ACL. Versioned file names. Only `Update-Clients.ps1` touches parents |
@@ -261,13 +274,16 @@ The domain-join files hold machine passwords. They're made when needed and delet
 ```
 PLAN.md          this plan
 docs/            one doc per area as phases land: status, decisions, verified results
-lab/             Proxmox setup, Terraform (bpg) for the servers and clients, the values in lab.auto.tfvars
-servers/         setup.sh (runs the scripts over SSH), settings.psd1 (the values), common.ps1
+lab/             Proxmox setup, Terraform (bpg) for the servers, clients and build VM, the values in lab.auto.tfvars;
+                 pve.sh, the Proxmox API for scripts
+servers/         setup.sh, remote.sh (runs the scripts over SSH), settings.psd1 (the values), common.ps1
 servers/dc/      promote to a new forest; DNS, DHCP scope and policies, WDS TFTP, IIS, boot files
 servers/san/     join the domain; iSCSI Target Server and the data disk
-boot/            boot.ipxe and menu.ipxe; configure.ps1 fetches snponly.efi, wimboot, Memtest86+
-.env.example     the passwords setup.sh reads from .env (gitignored)
-image/           WinPE build, answer files and scripts, NIC driver pack, golden image build
+boot/            boot.ipxe; the menus for non-clients, clients and the build; configure.ps1 fetches snponly.efi,
+                 wimboot, Memtest86+
+.env.example     the passwords the scripts read from .env (gitignored)
+image/           build.sh and nic-test.sh (from the PC); drivers.psd1, the NIC driver pack; dc/ and san/, their
+                 parts on the servers; winpe/, WinPE's startup and jobs; windows/, the answer files and scripts
 clients/         clients.csv, New-Client.ps1, Update-Clients.ps1, Remove-Client.ps1
 ```
 

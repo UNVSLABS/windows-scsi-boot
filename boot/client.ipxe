@@ -1,0 +1,35 @@
+#!ipxe
+# A client's menu. Its own script, clients/<mac>.ipxe, sets client (its name), initiator-iqn and root-path (its iSCSI
+# disk), then chains this. Windows from the disk is the default.
+
+:menu
+menu Diskless boot: ${client} (${net0/mac}, ${net0/ip})
+item --key w windows Windows, from its disk
+item --key p winpe   WinPE, with the disk attached, for recovery
+item --key m memtest Memtest86+
+item --key s shell   iPXE shell
+choose --timeout 5000 --default windows choice || goto windows
+goto ${choice}
+
+:windows
+sanboot ${root-path} || goto failed
+
+:winpe
+sanhook ${root-path} || goto failed
+kernel wimboot || goto failed
+initrd winpe/BCD BCD || goto failed
+initrd winpe/boot.sdi boot.sdi || goto failed
+initrd winpe/boot.wim boot.wim || goto failed
+boot || goto failed
+
+:memtest
+chain memtest.efi || goto failed
+
+:shell
+shell
+goto menu
+
+:failed
+echo Booting ${choice} failed. Press a key for the menu.
+prompt
+goto menu

@@ -22,8 +22,16 @@ servers = {
   }
 }
 
+# Three NIC models, for the NIC-independence test. The golden image is built on virtio (PLAN.md).
 clients = {
   "dl-ws-1" = { vm_id = 5031, address = "10.31.1.1", cores = 2, memory = 4096, nic_model = "virtio" }
-  "dl-ws-2" = { vm_id = 5032, address = "10.31.1.2", cores = 2, memory = 4096, nic_model = "virtio" }
-  "dl-ws-3" = { vm_id = 5033, address = "10.31.1.3", cores = 2, memory = 4096, nic_model = "virtio" }
+  "dl-ws-2" = { vm_id = 5032, address = "10.31.1.2", cores = 2, memory = 4096, nic_model = "e1000e" }
+  "dl-ws-3" = { vm_id = 5033, address = "10.31.1.3", cores = 2, memory = 4096, nic_model = "vmxnet3" }
+}
+
+# Builds golden images on the build target, through WinPE (image/build.sh). Its reservation is at the top of the range.
+# An Intel NIC: WinPE reaches the iSCSI disk only through a NIC whose driver loads when booting from the network, which
+# virtio's doesn't (docs/image.md).
+build_vms = {
+  "dl-build-1" = { vm_id = 5030, address = "10.31.1.250", cores = 4, memory = 4096, nic_model = "e1000e" }
 }

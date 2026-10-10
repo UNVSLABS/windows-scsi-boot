@@ -8,37 +8,10 @@ set -euo pipefail
 
 [[ $# -eq 6 ]] || { sed -n '6p' "$0" >&2; exit 1; }
 NODE=$1 VMID=$2 NAME=$3 CIDR=$4 GATEWAY=$5 DNS=$6
-API="${PROXMOX_VE_ENDPOINT%/}/api2/json/nodes/$NODE/qemu/$VMID/agent"
-AUTH="Authorization: PVEAPIToken=$PROXMOX_VE_API_TOKEN"
+# shellcheck source=lab/pve.sh
+. "$(dirname "$0")/pve.sh"
 
 log() { echo "[$NAME] $*" >&2; }
-
-# Run a PowerShell script in the guest. Prints its output and returns its exit code. Fails if the agent stops
-# answering (the guest restarted or crashed) or the script runs for more than 10 minutes.
-guest_ps() {
-  local encoded pid status deadline=$((SECONDS + 600))
-  # Without the preference, PowerShell writes its progress bars to stderr as CLIXML
-  encoded=$(printf '%s' "\$ProgressPreference = 'SilentlyContinue'
-$1" | iconv -t UTF-16LE | base64 -w0)
-  pid=$(curl -fsS -H "$AUTH" -H 'Content-Type: application/json' \
-    -d "{\"command\":[\"powershell.exe\",\"-NoProfile\",\"-NonInteractive\",\"-EncodedCommand\",\"$encoded\"]}" \
-    "$API/exec" | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["pid"])') || return 1
-  while :; do
-    status=$(curl -fsS -H "$AUTH" "$API/exec-status?pid=$pid") || { log "the guest agent stopped answering"; return 1; }
-    python3 -c 'import json,sys; sys.exit(0 if json.load(sys.stdin)["data"].get("exited") else 1)' <<<"$status" && break
-    ((SECONDS < deadline)) || { log "a guest command ran for 10 minutes"; return 1; }
-    sleep 2
-  done
-  python3 -c '
-import json, sys
-d = json.load(sys.stdin)["data"]
-sys.stdout.write(d.get("out-data", ""))
-err = d.get("err-data", "")
-sys.stderr.write(err if err.endswith("\n") or not err else err + "\n")
-sys.exit(d.get("exitcode", 1))' <<<"$status"
-}
-
-agent_up() { curl -fsS -o /dev/null -X POST -H "$AUTH" "$API/ping" 2>/dev/null; }
 
 # When the running Windows booted. It changes once a restart has really happened, which a failed ping doesn't prove.
 boot_time() {
@@ -49,7 +22,7 @@ boot_time() {
 wait_ready() {
   local deadline=$((SECONDS + $1)) state
   while :; do
-    state=$(agent_up && guest_ps '(Get-ItemProperty HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Setup\State).ImageState' 2>/dev/null | tr -d '\r\n') || true
+    state=$(image_state) || true
     [[ $state == IMAGE_STATE_COMPLETE ]] && return
     ((SECONDS < deadline)) || { log "Windows not ready after $(($1 / 60)) minutes (image state: ${state:-no agent})"; exit 1; }
     sleep 10

@@ -11,7 +11,8 @@ Phase 1 of the [plan](../PLAN.md): the domain controller hands out addresses and
 | DHCP | One scope with the network-boot policies ([below](#dhcp)) | — |
 | TFTP | WDS's TFTP server, serving `boot\x64\snponly.efi` from `C:\RemoteInstall`. WDS's PXE side answers no one ([below](#tftp-through-wds)) | — |
 | HTTP | IIS: `C:\BootFiles` as `http://10.31.0.10/boot/`, static files only | — |
-| iSCSI | — | iSCSI Target Server. The 200 GB data disk is `D:` (label `iSCSI`), with `D:\iSCSI\images` for golden images and `D:\iSCSI\clients` for child disks |
+| iSCSI | — | iSCSI Target Server, started a couple of minutes after boot (delayed start). The 200 GB data disk is `D:` (label `iSCSI`), with `D:\iSCSI\images` for golden images and `D:\iSCSI\clients` for child disks |
+| Windows Update | Downloads updates; installs them, and restarts, only when an admin says so | The same |
 
 `DISKLESS\admin` is a Domain Admin and Enterprise Admin. Its password, and the domain Administrator's, is the template's admin password.
 
@@ -42,7 +43,8 @@ WDS is deprecated from the next Windows Server release, but supported on 2025 fo
 |---|---|---|
 | `snponly.efi` | iPXE v2.0.0, `ipxeboot.tar.gz` | The firmware loads it over TFTP. It drives the NIC through the firmware's own UEFI driver |
 | `boot.ipxe` | [boot/boot.ipxe](../boot/boot.ipxe) | iPXE fetches it first. It chains `clients/<mac>.ipxe`, or `menu.ipxe` for machines that aren't clients |
-| `menu.ipxe` | [boot/menu.ipxe](../boot/menu.ipxe) | Memtest86+ (`m`), an iPXE shell (`s`), or the next boot device (`x`, the default after 30 s) |
+| `menu.ipxe` | [boot/menu.ipxe](../boot/menu.ipxe) | WinPE (`p`, phase 2), Memtest86+ (`m`), an iPXE shell (`s`), or the next boot device (`x`, the default after 30 s) |
+| `client.ipxe`, `build.ipxe` | [boot/](../boot) | A client's menu, and the build VM's boot during a build ([image](image.md)). A machine's own `clients/<mac>.ipxe` sets its disk and chains one of them |
 | `memtest.efi` | Memtest86+ v8.10, `mt86plus_8.10.binaries.zip` | An x86-64 EFI application, chained by iPXE |
 | `wimboot` | wimboot v2.9.0 | Boots WinPE (phase 2) |
 
@@ -51,7 +53,7 @@ WDS is deprecated from the next Windows Server release, but supported on 2025 fo
 
 ## How setup.sh runs the scripts
 
-- **One SSH connection per step.** It copies `servers/` and `boot/` to `C:\Windows\Temp\diskless` through Windows' `tar`, then runs the script, in the same connection. The password a step needs goes along as `servers\secret.txt`, which the script reads and deletes first.
+- **One SSH connection per step.** It copies `servers/`, `boot/` and `image/` to `C:\Windows\Temp\diskless` through Windows' `tar`, then runs the script, in the same connection. The password a step needs goes along as `servers\secret.txt`, which the script reads and deletes first. The image scripts share this ([servers/remote.sh](../servers/remote.sh)).
 - **Restarts.** A script that needs one restarts Windows and prints `restarting: <why>` and its boot time. `setup.sh` waits for the boot time to change, then runs the script again; each one skips what's done. The causes:
   - updates the template's clones install by themselves;
   - the promotion;
@@ -73,6 +75,8 @@ Each of these was a failure on the way, on 2026-10-10:
 | The client asked TFTP for `boot\x64\wdsmgfw.efi`: WDS had set server-wide DHCP option 60 | `wdsutil /Set-Server /DhcpOption60:No`, and option 60 removed |
 | A client leased 10.31.1.255: in a /16 that's a host address, and the exclusion ended at .254. After the fix, the DHCP server went on offering it and refusing it (NACK, PXE-E07) | The exclusion ends at .255, and the DHCP server restarts after an exclusion change |
 | The client's firmware had no network boot option at all | A VirtIO RNG on clients ([environment](environment.md#what-it-creates)) |
+| Windows Update restarted the storage server twice one night by itself, and every client booted from it would hang meanwhile (found 2026-10-11) | Both servers download updates, but install them and restart only when an admin says so (`AUOptions` 7) |
+| After that restart, the iSCSI target listened on nothing: its service had started before the static address was usable, and failed to bind (event 10, error 10049) | The service starts delayed, a couple of minutes after boot, and `configure.ps1` restarts it if it isn't listening |
 | iPXE: `memtest.efi... Permission denied` (HTTP 401) | Downloads copied, not moved, into `C:\BootFiles`, and its permissions reset |
 
 ## Setting it up

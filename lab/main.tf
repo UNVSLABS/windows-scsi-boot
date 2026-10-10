@@ -45,9 +45,21 @@ variable "clients" {
   }))
 }
 
+variable "build_vms" {
+  description = "Diskless VMs that build golden images (image/build.sh), made like the clients"
+  type = map(object({
+    vm_id     = number
+    address   = string
+    cores     = number
+    memory    = number
+    nic_model = string
+  }))
+}
+
 locals {
   # A fixed MAC per address, 02:00 and then the address in hex, so DHCP reservations and ARP caches survive a rebuild
-  mac = { for name, vm in merge(var.servers, var.clients) :
+  diskless = merge(var.clients, var.build_vms)
+  mac = { for name, vm in merge(var.servers, local.diskless) :
     name => format("02:00:%s", join(":", [for octet in split(".", vm.address) : format("%02X", tonumber(octet))]))
   }
 }
@@ -139,7 +151,7 @@ resource "terraform_data" "bootstrap" {
 }
 
 resource "proxmox_virtual_environment_vm" "client" {
-  for_each  = var.clients
+  for_each  = local.diskless
   name      = each.key
   vm_id     = each.value.vm_id
   node_name = var.node
@@ -200,4 +212,8 @@ output "servers" {
 output "clients" {
   description = "For clients.csv: name => MAC and the address of its DHCP reservation"
   value       = { for name, vm in var.clients : name => { mac = local.mac[name], address = vm.address } }
+}
+
+output "build_vms" {
+  value = { for name, vm in var.build_vms : name => { mac = local.mac[name], address = vm.address } }
 }
