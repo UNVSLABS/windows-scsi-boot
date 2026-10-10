@@ -8,7 +8,7 @@ Phase 0 of the [plan](../PLAN.md): the Proxmox pool and permissions, the flat ne
 |---|---|---|---|---|---|
 | vm-dl-dc-1 | 5010 | Full clone of 9021 `tpl-win2025`, with the Windows 11 LTSC ISO in its CD drive | 2 vCPU, 4 GiB, 64 GB | 10.31.0.10 | Running, named, on its static address |
 | vm-dl-san-1 | 5020 | Full clone of 9021, plus a 200 GB data disk | 4 vCPU, 8 GiB, 64 GB + 200 GB | 10.31.0.20 | Running, named, on its static address |
-| dl-ws-1 to dl-ws-3 | 5031-5033 | Empty: UEFI without Secure Boot keys, TPM 2.0, no disk, boots from `net0` | 2 vCPU, 4 GiB | DHCP reservation for 10.31.1.1-.3 (phase 1) | Stopped |
+| dl-ws-1 to dl-ws-3 | 5031-5033 | Empty: UEFI without Secure Boot keys, TPM 2.0, a VirtIO RNG, no disk, boots from `net0` | 2 vCPU, 4 GiB | DHCP reservation for 10.31.1.1-.3 (phase 3) | Stopped |
 
 - **Fixed MACs:** `02:00` followed by the address in hex (10.31.1.1 is `02:00:0A:1F:01:01`). DHCP reservations and ARP caches keep working across a rebuild. `terraform output clients` prints them for `clients.csv`.
 - **Clients stay stopped.** Start them by hand for a test, so they use no memory otherwise.
@@ -16,6 +16,7 @@ Phase 0 of the [plan](../PLAN.md): the Proxmox pool and permissions, the flat ne
   - finishes Windows setup with no questions, as every clone of the template does;
   - then [lab/bootstrap-server.sh](../lab/bootstrap-server.sh) gives each one its static address, gateway, DNS and computer name;
   - it does this through the QEMU guest agent, because the network has no DHCP until phase 1 and a new clone can't be reached over SSH.
+- **Clients have a random number generator** (`rng0`, from the host's `/dev/urandom`). Since 2025, OVMF offers no network boot without one: its network stack needs the entropy. Without it the firmware lists no PXE option at all, sends no DHCP request, and stops at "No bootable option or device was found". Physical machines have a hardware RNG.
 - **Clients have no tags.** Proxmox checks tag permission on `/vms/<id>` before a new VM joins its pool, so the pool's ACL doesn't cover it. Servers are clones, which are already in the pool when tagged.
 - **One CD drive per VM.** The bpg provider (0.116) refuses a second `cdrom` block. So virtio-win is downloaded where it's needed (phase 2), rather than attached.
 
@@ -26,7 +27,7 @@ Phase 0 of the [plan](../PLAN.md): the Proxmox pool and permissions, the flat ne
 | Proxmox VE | 9.2, node srv-pve-1 | A VLAN-aware bridge, and a thin-provisioned storage for VM disks |
 | Server template | VMID 9021 `tpl-win2025` ([lab repo images/windows](../../lab/docs/windows-images.md)) | Windows Server 2025, sysprepped, with the QEMU guest agent, and OpenSSH that accepts your key as `admin` |
 | ISOs | `local:iso/SW_DVD9_WIN_ENT_LTSC_2024_64-BIT_ENGLISH_MLF_X23-70046.ISO` | Windows 11 media for the install share |
-| Network | VLAN 31, 10.31.0.0/16, gateway 10.31.0.1 on the UniFi gateway, DHCP off, firewall zone Development | One broadcast domain with no DHCP server. A gateway if the clients need the internet. Reachable from where you run SSH |
+| Network | VLAN 31, 10.31.0.0/16, gateway 10.31.0.1 on the UniFi gateway, DHCP off, firewall zone Development | One broadcast domain with no DHCP server. A gateway if the clients need the internet. Reachable from where you run SSH. An IPS in blocking mode on the way may take the setup's SSH sessions for a scan and block them: allow-list the workstation to the network, or exclude the network from IPS |
 | Workstation | WSL Ubuntu with Terraform ≥ 1.5, curl, python3, iconv | Runs Terraform and `bootstrap-server.sh` |
 
 ## Setting it up
@@ -71,7 +72,7 @@ On srv-pve-1, 2026-10-10:
   - The two full clones took about 6 minutes together, or 2 alone.
   - The clients took 5–7 seconds once the clones were done.
   - Created at the same time as the clones, two clients had timed out on `local-zfs`'s storage lock, hence `depends_on` and `clone.retries`.
-- **Clients** are as intended: no disk, `boot: order=net0`, an EFI disk without keys, TPM 2.0, fixed MAC, VLAN 31, stopped.
+- **Clients** are as intended: no disk, `boot: order=net0`, an EFI disk without keys, TPM 2.0, fixed MAC, VLAN 31, stopped. The RNG (`rng0`) came in phase 1, when a client without one wouldn't network-boot ([servers](servers.md#what-each-piece-is-for)).
 - **Bootstrap.** Both servers came up with their names and addresses, `VM-DL-DC-1` on 10.31.0.10 and `VM-DL-SAN-1` on 10.31.0.20, about 2 minutes after their clones finished, restart included.
   - Re-running it on a server that's already set changed nothing and passed its check in 11 seconds.
   - Its final check caught clones whose Windows was broken: a host with a faulty memory stick fed them corrupted reads (lab repo [windows-images.md](../../lab/docs/windows-images.md#known-problem-clones-crash-on-srv-pve-1)). Rebuild such a VM with `-replace`.

@@ -19,7 +19,7 @@ Not covered: CHAP authentication, backups, Windows activation, and user data on 
 | Phase | What | State |
 |---|---|---|
 | 0 | Environment setup, repo, Terraform for the VMs | **Done 2026-10-10** ([docs/environment.md](docs/environment.md#verified)) |
-| 1 | Domain controller with DHCP and boot files; storage server with iSCSI Target | Not started |
+| 1 | Domain controller with DHCP and boot files; storage server with iSCSI Target | **Done 2026-10-10** ([docs/servers.md](docs/servers.md#verified)) |
 | 2 | Golden image, and the NIC-independence test | Not started |
 | 3 | Clients on differencing disks, joined to the domain | Not started |
 | 4 | Image updates and failure behaviour | Not started |
@@ -64,12 +64,14 @@ Client (VM or physical)                              vm-dl-dc-1: AD DS, DNS, DHC
 | Gateway | 10.31.0.1 (UniFi), with its DHCP off | Internet for clients. The domain controller is the only DHCP server |
 | Server template | VMID 9021 `tpl-win2025`: Windows Server 2025 Standard, sysprepped, OpenSSH with key logins. Built by the lab repo's [images/windows/](../lab/docs/windows-images.md) | Both servers are full clones of it |
 | Install media | The Windows 11 Enterprise LTSC 2024 ISO on `local`, in the domain controller's CD drive. virtio-win is downloaded where it's needed: the provider allows one CD drive per VM | WinPE and Windows setup for the golden image |
-| AD domain | Not chosen yet ([open questions](#open-questions)) | |
+| AD domain | `diskless.adl.unvslab.com`, NetBIOS name `DISKLESS` | The clients' domain. A subdomain of a domain you own: not `.local`, a single label, or your public apex |
 
 ### Network requirements
 
 - **One broadcast domain** shared by clients and both servers.
 - **No other DHCP server** on it.
+- **Client VMs with a random number generator:** since 2025, OVMF offers no network boot without one.
+- **An IPS that lets the setup's SSH through.** An IPS in blocking mode can take its SSH sessions for a scan: allow-list the workstation to the network.
 - **A gateway,** if clients need the internet.
 - **Clients that can UEFI PXE-boot** with Secure Boot off.
 
@@ -79,7 +81,7 @@ Client (VM or physical)                              vm-dl-dc-1: AD DS, DNS, DHC
 |---|---|---|---|
 | vm-dl-dc-1 | Full clone of 9021 | 2 vCPU, 4 GiB, 64 GB | 10.31.0.10, MAC `02:00:0A:1F:00:0A` |
 | vm-dl-san-1 | Full clone of 9021 | 4 vCPU, 8 GiB, 64 GB OS disk + 200 GB thin data disk | 10.31.0.20, MAC `02:00:0A:1F:00:14` |
-| dl-ws-1 to dl-ws-3 | Empty: UEFI without Secure Boot keys, TPM 2.0, no disk, boots from the network | 2 vCPU, 4 GiB each | DHCP reservation per fixed MAC |
+| dl-ws-1 to dl-ws-3 | Empty: UEFI without Secure Boot keys, TPM 2.0, a VirtIO RNG, no disk, boots from the network | 2 vCPU, 4 GiB each | DHCP reservation per fixed MAC |
 
 - **Fixed MACs** are `02:00` followed by the IPv4 address in hex.
 - **Full clones, not linked,** because the servers are long-lived and shouldn't depend on the template.
@@ -232,7 +234,7 @@ The domain-join files hold machine passwords. They're made when needed and delet
 | Servers | Two: a domain controller (AD DS, DNS, DHCP, TFTP, HTTP) and a storage server (iSCSI Target only) | Storage load and restarts stay separate from identity and network services |
 | Boot chain | UEFI PXE → stock iPXE `snponly.efi` → HTTP script → iSCSI → iBFT | Works on any NIC that can network-boot, and nothing has to be compiled. The iBFT lets Windows take over the session |
 | Per-client mapping | Static `boot/<mac>.ipxe` written by `New-Client.ps1`, rather than a DHCP option per client | One script owns the mapping, and DHCP stays generic. No custom service to run |
-| TFTP | WDS in TFTP-only mode | First-party. WDS is deprecated from the *next* Windows Server release (KB5129631) but supported for 2025's lifecycle. Fallback: a standalone TFTP service |
+| TFTP | WDS's TFTP server. Its PXE side is non-critical, answers no one, and sets no DHCP option 60 | First-party. WDS's PXE side can't run beside a DHCP server on the same machine ([docs/servers.md](docs/servers.md#tftp-through-wds)). WDS is deprecated from the *next* Windows Server release (KB5129631) but supported for 2025's lifecycle. Fallback: a standalone TFTP service |
 | Persistence | Children persist until the next image update, which recreates them | Clients keep their state between reboots, and images are updated in one place |
 | Client identity | An offline domain-join file and the computer name, written into each child disk before its first boot | Each client joins on first boot without credentials on the network, and keeps its computer account across updates |
 | Client OS | Windows 11 Enterprise LTSC 2024 | No Store apps to update, and a long servicing life |
@@ -252,8 +254,7 @@ The domain-join files hold machine passwords. They're made when needed and delet
 
 ## Open questions
 
-1. **AD domain name.** Needed before phase 1. Best as a subdomain of a domain you own.
-2. **Physical NIC models to support.** Their drivers go in the driver pack, and into the phase 2 test where possible.
+1. **Physical NIC models to support.** Their drivers go in the driver pack, and into the phase 2 test where possible.
 
 ## Repo layout
 
@@ -261,9 +262,11 @@ The domain-join files hold machine passwords. They're made when needed and delet
 PLAN.md          this plan
 docs/            one doc per area as phases land: status, decisions, verified results
 lab/             Proxmox setup, Terraform (bpg) for the servers and clients, the values in lab.auto.tfvars
-servers/dc/      AD DS, DNS, DHCP scope and policies, WDS TFTP-only, IIS
-servers/san/     iSCSI Target Server and the data disk
-boot/            boot.ipxe and the menu templates; fetches snponly.efi, wimboot, Memtest86+
+servers/         setup.sh (runs the scripts over SSH), settings.psd1 (the values), common.ps1
+servers/dc/      promote to a new forest; DNS, DHCP scope and policies, WDS TFTP, IIS, boot files
+servers/san/     join the domain; iSCSI Target Server and the data disk
+boot/            boot.ipxe and menu.ipxe; configure.ps1 fetches snponly.efi, wimboot, Memtest86+
+.env.example     the passwords setup.sh reads from .env (gitignored)
 image/           WinPE build, answer files and scripts, NIC driver pack, golden image build
 clients/         clients.csv, New-Client.ps1, Update-Clients.ps1, Remove-Client.ps1
 ```

@@ -1,0 +1,25 @@
+#!ipxe
+# The menu for machines that aren't clients. Clients get their own script, which can also boot Windows from their disk.
+
+:menu
+menu Diskless boot: ${net0/mac} (${net0/ip}) is not a client
+item --key m memtest Memtest86+
+item --key s shell   iPXE shell
+item --key x exit    Boot from the next device
+choose --timeout 30000 --default exit target || goto exit
+goto ${target}
+
+:memtest
+chain memtest.efi || goto failed
+
+:shell
+shell
+goto menu
+
+:exit
+exit
+
+:failed
+echo Booting ${target} failed. Press a key for the menu.
+prompt
+goto menu

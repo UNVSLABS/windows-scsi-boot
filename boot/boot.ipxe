@@ -1,0 +1,4 @@
+#!ipxe
+# Every client's iPXE fetches this first: the DHCP server's "iPXE" policy hands out its URL. It loads this machine's own
+# script, which New-Client.ps1 writes, or the menu for machines that aren't clients. URLs are relative to this one.
+chain --autofree clients/${net0/mac:hexhyp}.ipxe || chain --autofree menu.ipxe

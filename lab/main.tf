@@ -172,6 +172,10 @@ resource "proxmox_virtual_environment_vm" "client" {
     datastore_id = var.datastore
     version      = "v2.0"
   }
+  # OVMF offers no network boot without a random number generator: since 2025 its network stack needs the entropy
+  rng {
+    source = "/dev/urandom"
+  }
   agent {
     enabled = true # the golden image has the guest agent
     wait_for_ip { disabled = true }
