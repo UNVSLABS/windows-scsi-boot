@@ -18,7 +18,7 @@ Not covered: CHAP authentication, backups, Windows activation, and user data on 
 
 | Phase | What | State |
 |---|---|---|
-| 0 | Environment setup, repo, Terraform for the VMs | Not started |
+| 0 | Environment setup, repo, Terraform for the VMs | **Done 2026-10-10** ([docs/environment.md](docs/environment.md#verified)) |
 | 1 | Domain controller with DHCP and boot files; storage server with iSCSI Target | Not started |
 | 2 | Golden image, and the NIC-independence test | Not started |
 | 3 | Clients on differencing disks, joined to the domain | Not started |
@@ -63,7 +63,7 @@ Client (VM or physical)                              vm-dl-dc-1: AD DS, DNS, DHC
 | Network | Bridge `vmbr0`, VLAN 31, 10.31.0.0/16 | One flat network: storage and normal traffic share each machine's single NIC |
 | Gateway | 10.31.0.1 (UniFi), with its DHCP off | Internet for clients. The domain controller is the only DHCP server |
 | Server template | VMID 9021 `tpl-win2025`: Windows Server 2025 Standard, sysprepped, OpenSSH with key logins. Built by the lab repo's [images/windows/](../lab/docs/windows-images.md) | Both servers are full clones of it |
-| Install media | ISOs on `local`: Windows 11 Enterprise LTSC 2024, and virtio-win | WinPE and Windows setup for the golden image |
+| Install media | The Windows 11 Enterprise LTSC 2024 ISO on `local`, in the domain controller's CD drive. virtio-win is downloaded where it's needed: the provider allows one CD drive per VM | WinPE and Windows setup for the golden image |
 | AD domain | Not chosen yet ([open questions](#open-questions)) | |
 
 ### Network requirements
@@ -84,6 +84,7 @@ Client (VM or physical)                              vm-dl-dc-1: AD DS, DNS, DHC
 - **Fixed MACs** are `02:00` followed by the IPv4 address in hex.
 - **Full clones, not linked,** because the servers are long-lived and shouldn't depend on the template.
 - **Configuration:** Terraform (bpg provider) creates the VMs. PowerShell over SSH as `admin` configures the servers.
+- **Bootstrap:** the network has no DHCP until the domain controller provides it. So Terraform sets each new server's static address and computer name through the QEMU guest agent ([docs/environment.md](docs/environment.md)).
 
 ### Physical workstations
 
@@ -191,10 +192,10 @@ The domain-join files hold machine passwords. They're made when needed and delet
      - create VMs in the pool;
      - clone template 9021;
      - attach the ISOs on `local`;
-     - use `local-zfs` and `vmbr0` VLAN 31.
+     - use `local-zfs` and `vmbr0` VLAN 31, and VLAN 30, because the template's NIC is on it and cloning checks it.
    - **Gateway:** VLAN 31 network with DHCP off; clients reach the internet only.
-   - Repo layout ([below](#repo-layout)), and Terraform for the two servers and three clients.
-   - *Done when:* `terraform apply` creates all five VMs, and `destroy` removes them.
+   - Repo layout ([below](#repo-layout)), and Terraform for the two servers and three clients. Terraform also bootstraps the servers' addresses and names.
+   - *Done when:* `terraform apply` creates all five VMs, the servers answer SSH on their static addresses, and `destroy` removes everything.
 1. **Servers**
    - **vm-dl-dc-1:**
      - promote to a new forest; DNS forwarder to the gateway;
@@ -259,7 +260,7 @@ The domain-join files hold machine passwords. They're made when needed and delet
 ```
 PLAN.md          this plan
 docs/            one doc per area as phases land: status, decisions, verified results
-lab/             Terraform (bpg) for the servers and clients; site values gitignored
+lab/             Proxmox setup, Terraform (bpg) for the servers and clients, the values in lab.auto.tfvars
 servers/dc/      AD DS, DNS, DHCP scope and policies, WDS TFTP-only, IIS
 servers/san/     iSCSI Target Server and the data disk
 boot/            boot.ipxe and the menu templates; fetches snponly.efi, wimboot, Memtest86+

@@ -1,0 +1,6 @@
+# Scripts run on Linux (Proxmox nodes, WSL) or are served to iPXE; CRLF would break them
+*.sh text eol=lf
+*.py text eol=lf
+*.tf text eol=lf
+*.tfvars text eol=lf
+*.ipxe text eol=lf

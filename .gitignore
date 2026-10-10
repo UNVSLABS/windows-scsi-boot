@@ -1,0 +1,5 @@
+# Terraform working files and state (state holds VM details; the token comes from the environment)
+.terraform/
+*.tfstate
+*.tfstate.*
+crash.log
