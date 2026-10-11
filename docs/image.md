@@ -12,7 +12,7 @@ Phase 2 of the [plan](../PLAN.md): a sysprepped Windows 11 Enterprise LTSC 2024 
 | WinPE runs setup onto the iSCSI disk, and Windows boots from it ([below](#booting-from-iscsi)) | **Done 2026-10-11** |
 | Sysprep, sealing `golden-v1` | **Done 2026-10-11**: 12.4 GB, generalised, read-only |
 | The NIC test, and what makes a NIC a boot NIC | **Done 2026-10-11** ([below](#nic-independence)) |
-| A second NIC model through the build: vmxnet3 | **Done 2026-10-11**: `golden-v3` boots e1000e and vmxnet3 clients ([results](#results)) |
+| A second NIC family through the build: vmxnet3, standing in for a physical one | **Done 2026-10-11**: `golden-v3` boots e1000e and vmxnet3 clients ([results](#results)) |
 | A clean build with the scripts as they are: `golden-v4` | **Done 2026-10-11**: 11.6 GB, in 25 minutes (WinPE and setup 13, Windows 12). Boots the e1000e and vmxnet3 clients |
 
 ## What a build makes
@@ -23,7 +23,7 @@ Phase 2 of the [plan](../PLAN.md): a sysprepped Windows 11 Enterprise LTSC 2024 
 |---|---|
 | Windows | Windows 11 Enterprise LTSC 2024 (image 1 of the media's `install.wim`), with Microsoft's KMS client key, so unactivated without a KMS host |
 | Installed onto | An iSCSI disk, by Windows setup in WinPE, so that setup itself makes the build's NICs boot NICs ([below](#nic-independence)) |
-| Boot NICs | Intel 82574L (QEMU's e1000e), the build VM's own; and vmxnet3, the build's second NIC (`BuildSecondNic`) |
+| Boot NIC families | Intel 1 GbE, through the build VM's own NIC, QEMU's e1000e (Intel 82574L); and VMware's vmxnet3, the build's second NIC (`BuildSecondNic`), which stands in for a second family of physical NICs ([below](#nic-independence)). A build can have the first alone ([Building for one NIC family](#building-for-one-nic-family)) |
 | Account | `admin`, with `IMAGE_PASSWORD` from `.env`. It's kept apart from the servers' password: every client has it |
 | Remote access | OpenSSH with the servers' keys (Microsoft's MSI), RDP and ping, on every network profile |
 | Drivers | The driver pack, added by setup before the image's first boot: virtio-win 0.1.302 (all its Windows 11 drivers), Intel 82574L 12.15.22.6 and vmxnet3 1.9.21.0. Plus the QEMU guest agent |
@@ -40,14 +40,15 @@ image/build.sh <N>                                                    PC, WSL
  2 vm-dl-dc-1    the ADK and WinPE with the NIC drivers (once); the install share with the media and drivers (once);
                  this build's answer files, a new password for the share's account, and for dl-build-1 its boot
                  script for setup, its WinPE job and a DHCP reservation
- 3 dl-build-1    with its second NIC as net1 (vmxnet3):
+ 3 dl-build-1    with its second NIC as net1 (vmxnet3, the stand-in), if the build has one:
                  PXE ─▶ snponly.efi ─▶ clients/<mac>.ipxe ─▶ build.ipxe, setup:
-                   clear the gateway, which iPXE would put in the iBFT,
-                   chain ipxe.efi, which drives both NICs, and run again in it:
-                   sanhook the build disk through net0 and the second disk through net1, boot WinPE (wimboot)
-                 WinPE fetches jobs/<mac>.cmd: map \\<dc>\install, wait for both disks, run setup onto the large one
+                   clear the gateway, which iPXE would put in the iBFT;
+                   with a second NIC, chain ipxe.efi, which drives both NICs, and run again in it;
+                   sanhook the build disk through net0, and the second disk through net1 if there is one;
+                   boot WinPE (wimboot)
+                 WinPE fetches jobs/<mac>.cmd: map \\<dc>\install, wait for the disks, run setup onto the largest
                  (/noreboot), copy the first logon's files, power off
- 4 PC            take net1 away; dl-build-1's boot script for windows
+ 4 PC            take net1 away, if it's there; dl-build-1's boot script for windows
  5 dl-build-1    PXE ─▶ snponly.efi ─▶ build.ipxe, windows: sanboot the build disk ─▶ setup finishes
                  ─▶ firstlogon.ps1 ─▶ restart ─▶ generalize.ps1: sysprep, then power off
  6 vm-dl-san-1   take golden-v<N> off the target, check that it's generalised, make it read-only
@@ -55,7 +56,7 @@ image/build.sh <N>                                                    PC, WSL
 ```
 
 - **The build VM,** `dl-build-1`, is an empty diskless VM like the clients, with an Intel e1000e NIC ([lab/lab.auto.tfvars](../lab/lab.auto.tfvars)). Its boot script and job exist only during a build; otherwise it gets the menu for machines that aren't clients.
-- **Its second NIC** is added by `build.sh` through the Proxmox API for steps 3 and 4 only, as `net1`, with the model and MAC in `settings.psd1`. Without `BuildSecondNic`, the build has one NIC and one disk.
+- **Its second NIC** is added by `build.sh` through the Proxmox API for step 3 only, as `net1`, with the model and MAC in `settings.psd1`. Here it's vmxnet3, standing in for a second physical NIC family ([NIC independence](#nic-independence)). Without `BuildSecondNic`, the build has one NIC and one disk ([Building for one NIC family](#building-for-one-nic-family)).
 - **WinPE** is the ADK's, 10.1.26100.9457. It has WMI and SecureStartup for Windows 11's setup, PowerShell, and the driver pack's NIC drivers. wimboot boots it from `http://<dc>/boot/winpe/`, with the BCD and `boot.sdi` from the ADK's WinPE media.
 - **WinPE's jobs.** WinPE's own `startnet.cmd` ([image/winpe/startnet.cmd](../image/winpe/startnet.cmd)) fetches `http://<dc>/boot/jobs/<mac>.cmd` for its MAC and runs it. The build's job is [image/winpe/build.cmd](../image/winpe/build.cmd). Without a job, WinPE stops at a prompt, for recovery.
 - **Setup is the previous version,** `sources\setup.exe`. Windows 11 24H2's new setup has been reported to quit silently at an iSCSI disk.
@@ -104,13 +105,24 @@ Without the first, Windows stops with INACCESSIBLE_BOOT_DEVICE at once; without 
 
 **So each client's NIC needs its interface made once, unless it's the build NIC's model at the build NIC's slot:** WinPE on the client, with its disk attached, runs `/Add-NetAdapter` for its NIC on that disk (the `netadapter` variant of the test, [image/winpe/netadapter.cmd](../image/winpe/netadapter.cmd)). That's a step of the client's first boot in phase 3.
 
-**And each NIC model needs to have been in the iBFT when setup ran.** The build adds a second model (`BuildSecondNic`):
-- **One second model:** Windows reads two NICs from the iBFT, whatever iPXE writes. A third was left out.
+**And each NIC family needs its driver package reflected, which setup does only for the NICs in the iBFT.** Windows reads two NICs from the iBFT, whatever iPXE writes: a third was left out. So an image has up to two families' packages: the build VM's own NIC's, and that of a second NIC the build adds while setup runs (`BuildSecondNic`). A package covers every device its INF lists, not only the NIC it was reflected through:
+
+| Slot | Here | Its package | What it covers |
+|---|---|---|---|
+| The build VM's NIC | QEMU's e1000e | Intel `net1ix64.inf` 12.15.22.6, from 2016: a Microsoft-published build of Intel's 1 GbE driver | Intel 82574L (`PCI\VEN_8086&DEV_10D3`), the e1000e. And physical Intel 1 GbE NICs: 82579, I217, I218, the early I219 revisions, I210/I211, I350, 82575/82576/82580. Not later I219 revisions, I225/I226 or 10 GbE. Check a NIC's PCI ID against the INF |
+| The second NIC | VMware's vmxnet3: **a stand-in** | vmxnet3 1.9.21.0 | VMware's virtual adapter only (`PCI\VEN_15AD&DEV_07B0`) |
+
+**vmxnet3 stands in for a second family of physical NICs.** The second slot is for workstation NICs that the first slot's package doesn't cover, such as a Realtek, an Intel I225/I226 or a newer I219. vmxnet3 is a NIC that a VM can have, so it proves the mechanism here, and it also serves VM clients with a vmxnet3 NIC. To take a physical family instead:
+- **The NIC itself must be the build's second NIC:** passed through from the host to the build VM, or the build runs on a physical machine with both NICs. `build.sh` adds only an emulated model as `net1`, so passthrough needs a change there.
+- **Its driver package goes in the driver pack** ([image/drivers.psd1](../image/drivers.psd1)), so that WinPE has it too: setup reflects the package WinPE uses for the NIC.
+- **Setup must be able to reflect it:** `setupact.log` shows `Driver Install ... Driver Result: [0x0]` for it, and the image has its service. That can't be known in advance: virtio's driver met every visible requirement and failed. Drivers whose INFs declare network boot (`BootFlags`) were made for iSCSI boot, and are the likeliest to pass.
+- **Its clients** all need the step above, as the second NIC is gone before the build's Windows phase.
+
+How the build gets the second NIC into the iBFT:
 - **Through a target of its own:** iPXE puts a disk's NIC in the iBFT by routing to the disk's target. So the second NIC reaches a small second disk through the storage server's second address, with a host route each (iPXE's `static-routes`, DHCP option 121), and the build disk keeps going through `net0`.
 - **With the full iPXE:** the stock `snponly.efi` drives only the NIC it was loaded from, so the build's boot chains `ipxe.efi`, from the same iPXE release, before anything is attached.
 - **For setup only:** with the second NIC still there at the new Windows' first boot, setup's specialize pass restarted the VM while installing devices. So WinPE powers off, and `build.sh` takes the NIC away first.
 - **Not virtio:** setup itself fails to reflect virtio's NetKVM 0.1.302 (`Driver Install ... Driver Result: [0x80070001]`, "Windows installation cannot continue because a required driver could not be installed"). An image built on a virtio NIC would fail at the same step. VM clients use e1000e or vmxnet3.
-- **Physical NIC models** can be added only with the NIC itself in the build VM, passed through from the host, or by building on a physical machine.
 
 [image/nic-test.sh](../image/nic-test.sh) tests a golden image on one client:
 - it gives a client a new differencing disk on the image;
@@ -130,6 +142,33 @@ The clients have three NIC models: `dl-ws-1` virtio, `dl-ws-2` e1000e, `dl-ws-3`
 | | vmxnet3, `net0`: the second NIC was `net1` | | **Passed,** 3 minutes |
 
 `golden-v3` was built with one-off scripts, `golden-v4` with the ones in this repo. `golden-v1` and `golden-v3` have since been deleted; `golden-v2`, a build whose iBFT had one NIC, too.
+
+## Building for one NIC family
+
+The second NIC is optional. A build with only the build VM's own NIC makes an image for that one NIC family: here, the e1000e's Intel package and the physical Intel NICs it covers ([above](#nic-independence)).
+
+**What it needs:**
+- **A build VM whose only NIC, `net0`, is of that family,** with a driver that setup can reflect: not virtio. In a VM, that's an emulated model whose driver package also covers the physical NICs wanted, as Intel's does for the e1000e. For a family that no emulated NIC shares a driver with, the build VM needs a NIC of that family passed through from the host, or the build runs on a physical machine with one.
+- **That family's driver package in the driver pack** ([image/drivers.psd1](../image/drivers.psd1)), so that WinPE has it and setup reflects it from there.
+- **In [servers/settings.psd1](../servers/settings.psd1):** `BuildSecondNic = ''`, and `SanSecondAddress = ''`.
+
+**What it doesn't need:**
+- **The storage server's second address and its portal.** `servers/san/configure.ps1` adds none. An address it added before stays until removed by hand (`Remove-NetIPAddress`).
+- **The `build-second` target and its disk.** `build-disk.ps1` makes no second target.
+- **`ipxe.efi`.** The build's boot attaches the build disk through `snponly.efi`, as for clients.
+- **The build VM's `net1`.** `build.sh` adds none, and removes one it finds once the VM is off.
+
+**How the build differs:** WinPE waits for one iBFT disk, not two, and setup's log shows `NICs in iBFT: 1; NICs resolved: 1`. Otherwise it's the same: WinPE and setup, then Windows, then the seal.
+
+**What the image boots:**
+
+| Client | First boot |
+|---|---|
+| A VM with the build NIC's model at `net0` | Boots unchanged: sysprep kept the build VM's device and interface |
+| The same model at another slot, or a physical NIC the package covers | Boots once WinPE has made its interface (`/Add-NetAdapter`) |
+| Any other NIC | Doesn't boot: its package isn't reflected |
+
+`golden-v1` was built this way, by an earlier version of the scripts, and gave the first rows of the [results](#results). The scripts as they are haven't yet built a one-family image.
 
 `bootflags` and `bootstart` change only the services of NICs the image has installed, and copying WinPE's service in isn't reflection, so neither helps a model setup hasn't seen. An undocumented `drvstore.dll` function that setup's reflection is reported to use (`DriverStoreOfflineAddDriverPackageW`) returned "invalid parameter" for every flag value tried, even for the package setup had reflected, and was dropped.
 
@@ -152,8 +191,8 @@ Each of these was a failure on the way, on 2026-10-10 and 11:
 | Sysprep never ran: `Optimize-Volume -ReTrim` failed, because the iSCSI target presents the disk as fully provisioned, so Windows can't trim it | No trim |
 | Only the build NIC's model booted the image ([above](#nic-independence)) | A second NIC model through the build, and the client's interface made by WinPE |
 | iPXE saw only the build VM's first NIC: `snponly.efi` drives only the NIC it was loaded from | The build chains `ipxe.efi` for setup |
-| Three NICs in iPXE's iBFT, two in setup's log: Windows reads two | One second model |
-| Setup aborted at virtio's driver: "a required driver could not be installed" (0x80070001) | vmxnet3 as the second model |
+| Three NICs in iPXE's iBFT, two in setup's log: Windows reads two | One second family |
+| Setup aborted at virtio's driver: "a required driver could not be installed" (0x80070001) | vmxnet3 as the second family's stand-in |
 | Setup's specialize pass restarted the VM, "The computer restarted unexpectedly", with the second NIC still in it | WinPE powers off, and `build.sh` takes the NIC away before Windows' first boot |
 | The iBFT had one NIC again when iPXE had tried to boot the blank disk before chaining `ipxe.efi` | The build's boot chains it before attaching anything, and knows its phase rather than trying the disk |
 | The answer file installed onto disk 0, which with two iBFT disks needn't be the build disk | WinPE's job writes the large disk's number into its copy of the answer file |
@@ -171,4 +210,4 @@ After [the servers](servers.md), from this repo in WSL:
    ```
    It refuses a version that's already built. An unfinished build of the same version is replaced. The first run takes half an hour more, for the ADK and WinPE.
 
-**To change WinPE,** for example after a change to the driver pack or its startup: delete `C:\BootFiles\winpe` on the domain controller, and the next build makes it again. **To take a new driver release:** change its entry in `drivers.psd1`, and delete its folder in `C:\Install\drivers` and `C:\BootFiles\winpe`. **To change the second NIC model:** `BuildSecondNic` in `settings.psd1`; `''` builds with one NIC.
+**To change WinPE,** for example after a change to the driver pack or its startup: delete `C:\BootFiles\winpe` on the domain controller, and the next build makes it again. **To take a new driver release:** change its entry in `drivers.psd1`, and delete its folder in `C:\Install\drivers` and `C:\BootFiles\winpe`. **To change the second NIC model:** `BuildSecondNic` in `settings.psd1`. **To build for one NIC family:** [above](#building-for-one-nic-family).
