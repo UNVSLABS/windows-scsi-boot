@@ -36,7 +36,6 @@ teardown() {
   [[ $(vm_status) == stopped ]] || vm_stop
   if [[ -z $KEEP ]]; then
     run "admin@$DC" image/dc/test-client.ps1 "$CLIENT" "$MAC" remove >/dev/null
-    sleep 10 # for the iSCSI session to end
     run "admin@$SAN" image/san/test-client.ps1 "$VERSION" "$CLIENT" "$IQN" remove >/dev/null
   fi
 }
@@ -50,7 +49,6 @@ if [[ $VARIANT == netadapter ]]; then
     log "WinPE didn't power off within 15 minutes: see the console"
     exit 1
   fi
-  sleep 10 # for the iSCSI session to end
   run "admin@$SAN" image/san/read-client.ps1 "$CLIENT" 'Windows\Temp\netadapter.log'
 fi
 

@@ -2,6 +2,11 @@
 # A client's menu. Its own script, clients/<mac>.ipxe, sets client (its name), initiator-iqn and root-path (its iSCSI
 # disk), then chains this. Windows from the disk is the default.
 
+# Windows sends iSCSI through the gateway in the iBFT, even to a target on its own subnet, and a gateway that doesn't
+# route it back to the subnet breaks the connection. iPXE copies the NIC's gateway into the iBFT, so it's cleared first.
+# Everything iPXE fetches is on this subnet.
+set net0/gateway 0.0.0.0
+
 :menu
 menu Diskless boot: ${client} (${net0/mac}, ${net0/ip})
 item --key w windows Windows, from its disk

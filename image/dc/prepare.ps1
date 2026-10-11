@@ -177,7 +177,7 @@ Step 'the build files'
 $values = @{
   IMAGE_INDEX = $s.ImageIndex; PRODUCT_KEY = $s.ProductKey; LOCALE = $s.Locale; UI_LANGUAGE = $s.UILanguage
   TIMEZONE = $s.TimeZone; USER = $s.ImageUser; PASSWORD = $password
-  DC = $s.DcAddress; ACCOUNT = $account; SHARE_PASSWORD = $sharePassword
+  DC = $s.DcAddress; SAN = $s.SanAddress; ACCOUNT = $account; SHARE_PASSWORD = $sharePassword
 }
 # On the share: the answers, which hold the image's password, readable only by admins and the share's account
 $build = "$share\build"

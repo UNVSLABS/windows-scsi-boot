@@ -19,8 +19,8 @@ $parent = "$($s.SanDataDrive):\iSCSI\images\golden-v$Version.vhdx"
 $path = "$($s.SanDataDrive):\iSCSI\clients\$Name.vhdx"
 if (-not (Test-Path $parent) -or -not (Get-Item $parent).IsReadOnly) { throw "golden-v$Version isn't built and sealed" }
 
+Wait-TargetIdle $Name # nic-test.sh runs this while the client is off
 $t = Get-IscsiServerTarget -TargetName $Name -ErrorAction SilentlyContinue
-if ($t.Status -eq 'Connected') { throw "target $Name has a session: is $Name running?" }
 if (Get-IscsiVirtualDisk -Path $path -ErrorAction SilentlyContinue) { Remove-IscsiVirtualDisk -Path $path }
 Remove-Item $path -Force -ErrorAction SilentlyContinue
 if ($Variant -eq 'remove') {
@@ -34,34 +34,32 @@ New-IscsiVirtualDisk -Path $path -ParentPath $parent | Out-Null
 
 if ($Variant -in 'bootflags', 'bootstart') {
   Step "$Name`: $Variant"
-  $disk = Mount-DiskImage $path -PassThru | Get-Disk
   $hive = 'HKLM\diskless-test'
-  try {
-    if ($disk.IsOffline) { $disk | Set-Disk -IsOffline $false }
-    $partition = $disk | Get-Partition | Where-Object { ($_ | Get-Volume).FileSystemLabel -eq 'Windows' }
-    if (-not $partition.DriveLetter) { $partition | Add-PartitionAccessPath -AssignDriveLetter; $partition = $partition | Get-Partition }
-    reg load $hive "$($partition.DriveLetter):\Windows\System32\config\SYSTEM" | Out-Null
+  Use-WindowsVolume $path {
+    param($volume)
+    reg load $hive "$volume\Windows\System32\config\SYSTEM" | Out-Null
     if ($LASTEXITCODE) { throw "reg load failed" }
-    $set = "HKLM:\diskless-test\ControlSet00$((Get-ItemProperty HKLM:\diskless-test\Select).Current)"
-    # The services of the network adapters that Windows has installed: drivers only staged in the driver store have none
-    $net = '{4d36e972-e325-11ce-bfc1-08002be10318}'
-    $services = Get-ChildItem "$set\Enum\PCI" | Get-ChildItem | Get-ItemProperty |
-      Where-Object ClassGUID -eq $net | ForEach-Object Service | Sort-Object -Unique
-    foreach ($service in $services) {
-      Set-ItemProperty "$set\Services\$service" BootFlags 1 -Type DWord
-      if ($Variant -eq 'bootstart') { Set-ItemProperty "$set\Services\$service" Start 0 -Type DWord }
-      $v = Get-ItemProperty "$set\Services\$service"
-      "service $service`: Start $($v.Start), BootFlags $($v.BootFlags)"
+    try {
+      $set = "HKLM:\diskless-test\ControlSet00$((Get-ItemProperty HKLM:\diskless-test\Select).Current)"
+      # The services of the network adapters that Windows has installed: drivers only staged in the driver store have none
+      $net = '{4d36e972-e325-11ce-bfc1-08002be10318}'
+      $services = Get-ChildItem "$set\Enum\PCI" | Get-ChildItem | Get-ItemProperty |
+        Where-Object ClassGUID -eq $net | ForEach-Object Service | Sort-Object -Unique
+      foreach ($service in $services) {
+        Set-ItemProperty "$set\Services\$service" BootFlags 1 -Type DWord
+        if ($Variant -eq 'bootstart') { Set-ItemProperty "$set\Services\$service" Start 0 -Type DWord }
+        $v = Get-ItemProperty "$set\Services\$service"
+        "service $service`: Start $($v.Start), BootFlags $($v.BootFlags)"
+      }
+      # The pack's NIC drivers that have no service: Windows hasn't installed them on any device
+      foreach ($service in 'netkvm', 'e1i68x64', 'vmxnet3ndis6') {
+        if (-not (Test-Path "$set\Services\$service")) { "service $service`: none" }
+      }
+      Remove-Variable v -ErrorAction SilentlyContinue
+    } finally {
+      [gc]::Collect(); [gc]::WaitForPendingFinalizers() # the registry provider's handles, or the unload fails
+      reg unload $hive 2>&1 | Out-Null
     }
-    # The pack's NIC drivers that have no service: Windows hasn't installed them on any device
-    foreach ($service in 'netkvm', 'e1i68x64', 'vmxnet3ndis6') {
-      if (-not (Test-Path "$set\Services\$service")) { "service $service`: none" }
-    }
-    Remove-Variable v -ErrorAction SilentlyContinue
-  } finally {
-    [gc]::Collect(); [gc]::WaitForPendingFinalizers() # the registry provider's handles, or the unload fails
-    reg unload $hive 2>&1 | Out-Null
-    Dismount-DiskImage $path | Out-Null
   }
 }
 

@@ -10,15 +10,11 @@ $ProgressPreference = 'SilentlyContinue'
 . "$PSScriptRoot\..\..\servers\common.ps1"
 
 $path = "$($s.SanDataDrive):\iSCSI\clients\$Name.vhdx"
-if ((Get-IscsiServerTarget -TargetName $Name -ErrorAction SilentlyContinue).Status -eq 'Connected') { throw "$Name is still running" }
-$disk = Mount-DiskImage $path -Access ReadOnly -PassThru | Get-Disk
-try {
-  if ($disk.IsOffline) { $disk | Set-Disk -IsOffline $false }
-  $partition = $disk | Get-Partition | Where-Object { ($_ | Get-Volume).FileSystemLabel -eq 'Windows' }
-  if (-not $partition.DriveLetter) { $partition | Add-PartitionAccessPath -AssignDriveLetter; $partition = $partition | Get-Partition }
+Wait-TargetIdle $Name # nic-test.sh runs this once the client is off
+Use-WindowsVolume $path -ReadOnly {
+  param($volume)
   foreach ($f in $File) {
-    $full = "$($partition.DriveLetter):\$f"
     "== $f"
-    if (Test-Path $full) { Get-Content $full } else { '(none)' }
+    if (Test-Path "$volume\$f") { Get-Content "$volume\$f" } else { '(none)' }
   }
-} finally { Dismount-DiskImage $path | Out-Null }
+}

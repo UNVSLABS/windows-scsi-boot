@@ -4,6 +4,10 @@
 # several times: once it has written Windows' boot files to the disk, the disk boots. Until then, sanboot fails and
 # WinPE starts, with the disk attached. WinPE fetches the build's job, jobs/<mac>.cmd, which installs Windows onto it.
 
+# Windows sends iSCSI through the gateway in the iBFT, even to a target on its own subnet, and a gateway that doesn't
+# route it back to the subnet breaks the connection. iPXE copies the NIC's gateway into the iBFT, so it's cleared first.
+# Everything iPXE fetches is on this subnet.
+set net0/gateway 0.0.0.0
 echo Building a golden image on ${root-path}
 sanboot ${root-path} || goto install
 exit

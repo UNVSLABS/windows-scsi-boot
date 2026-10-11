@@ -12,9 +12,7 @@ $target = 'build'
 if (-not (Test-Path $path)) { throw "no $path" }
 
 Step 'off the build target'
-if ((Get-IscsiServerTarget -TargetName $target -ErrorAction SilentlyContinue).Status -eq 'Connected') {
-  throw "target $target still has a session: is the build VM still running?"
-}
+Wait-TargetIdle $target # build.sh runs this once the build VM is off
 if (Get-IscsiVirtualDisk -Path $path -ErrorAction SilentlyContinue) {
   Remove-IscsiVirtualDiskTargetMapping -TargetName $target -Path $path -ErrorAction SilentlyContinue
   Remove-IscsiVirtualDisk -Path $path # from the iSCSI target's list; the file stays

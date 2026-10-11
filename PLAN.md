@@ -20,7 +20,7 @@ Not covered: CHAP authentication, backups, Windows activation, and user data on 
 |---|---|---|
 | 0 | Environment setup, repo, Terraform for the VMs | **Done 2026-10-10** ([docs/environment.md](docs/environment.md#verified)) |
 | 1 | Domain controller with DHCP and boot files; storage server with iSCSI Target | **Done 2026-10-10** ([docs/servers.md](docs/servers.md#verified)) |
-| 2 | Golden image, and the NIC-independence test | **In progress, blocked:** the build boots WinPE with its iSCSI disk described, but WinPE doesn't connect it ([docs/image.md](docs/image.md#blocked-winpe-doesnt-connect-the-iscsi-disk)) |
+| 2 | Golden image, and the NIC-independence test | **In progress:** `golden-v1` is built on iSCSI, 2026-10-11. In the NIC test, it boots a new machine with the build's NIC model, but not yet other models ([docs/image.md](docs/image.md#results-2026-10-11-on-golden-v1-built-on-an-e1000e)) |
 | 3 | Clients on differencing disks, joined to the domain | Not started |
 | 4 | Image updates and failure behaviour | Not started |
 
@@ -50,6 +50,7 @@ Client (VM or physical)                              vm-dl-dc-1: AD DS, DNS, DHC
   - an unknown MAC gets WinPE and Memtest86+ only;
   - building the golden image uses a separate build menu.
 - **iPXE writes the session's settings into the iBFT** (iSCSI Boot Firmware Table). That's how Windows' own iSCSI initiator takes over the session once the kernel loads.
+- **The iBFT has no gateway.** Windows sends iSCSI through the iBFT's gateway even to a target on its own subnet, so the boot scripts clear it before attaching the disk. Windows still gets its default gateway from DHCP.
 - **Secure Boot is off on clients,** because the stock `snponly.efi` is unsigned. iPXE has had a Microsoft-signed shim since 2025 (iPXE 16.1), if Secure Boot is needed later.
 
 ## Target environment
@@ -174,9 +175,10 @@ The domain-join files hold machine passwords. They're made when needed and delet
 - The documented way to boot on other NICs is from the Windows 7 era. It edited a registry list (the Critical Device Database) that Windows 8 and later no longer have.
 
 **Found in phase 2** ([docs/image.md](docs/image.md#nic-independence)):
-- **The NIC's driver must declare `BootFlags` 0x1 in its INF** for Windows to use it for iSCSI at all. Intel's drivers do. virtio's NetKVM and vmxnet3's don't. So the master is built on an Intel NIC.
+- **The NIC's driver must declare `BootFlags` 0x1 in its INF** for the installed Windows to boot from iSCSI through it: the driver starts on demand, and the flag loads it at boot when booting from the network. Intel's drivers do. virtio's NetKVM and vmxnet3's don't. So the master is built on an Intel NIC. WinPE doesn't need the flag: it connects the disk once plug and play has loaded the driver.
 - **Every machine's NIC is a new device to the image,** even with the same model. Most NICs, QEMU's e1000e and vmxnet3 included, carry a serial number made from the MAC, and Windows builds the device's ID from it. Only virtio-net doesn't.
-- **Windows has a driver's service only once it has installed a device for it.** So setting `BootFlags` can't help a NIC the image has never installed. Windows setup makes its boot NIC with an undocumented `dism /Add-NetAdapter`, which can also run per client, from WinPE.
+- **Windows has a driver's service only once it has installed a device for it.** So setting `BootFlags` can't help a NIC the image has never installed. Windows setup makes its boot NIC by registering its driver as boot-critical in the image, which creates the service, and then with an undocumented `dism /Add-NetAdapter`. Only the second can be run by hand: the first is an undocumented function in `drvstore.dll`.
+- **A new machine with the build's NIC model boots the image unchanged.** virtio and vmxnet3 don't, even after `/Add-NetAdapter` and a copied service ([results](docs/image.md#results-2026-10-11-on-golden-v1-built-on-an-e1000e)).
 
 **What to test:**
 1. **Include drivers for every NIC we target:** Windows' built-in ones, virtio, and vendor packs for physical NICs.
@@ -243,6 +245,7 @@ The domain-join files hold machine passwords. They're made when needed and delet
 | Image hosting | iSCSI Target Server on Windows Server 2025 | Built in, with differencing VHDX. Microsoft documents it for booting up to 256 clients from one sysprepped master, with iPXE as the boot loader. It isn't deprecated in 2025 |
 | Servers | Two: a domain controller (AD DS, DNS, DHCP, TFTP, HTTP) and a storage server (iSCSI Target only) | Storage load and restarts stay separate from identity and network services |
 | Boot chain | UEFI PXE → stock iPXE `snponly.efi` → HTTP script → iSCSI → iBFT | Works on any NIC that can network-boot, and nothing has to be compiled. The iBFT lets Windows take over the session |
+| iBFT gateway | Cleared in iPXE before every `sanboot` and `sanhook` | Windows routes iSCSI through it even on its own subnet, and a gateway needn't route that back onto the subnet. Without it, WinPE never connected the disk ([docs/image.md](docs/image.md#booting-from-iscsi)) |
 | Per-client mapping | Static `boot/<mac>.ipxe` written by `New-Client.ps1`, rather than a DHCP option per client | One script owns the mapping, and DHCP stays generic. No custom service to run |
 | TFTP | WDS's TFTP server. Its PXE side is non-critical, answers no one, and sets no DHCP option 60 | First-party. WDS's PXE side can't run beside a DHCP server on the same machine ([docs/servers.md](docs/servers.md#tftp-through-wds)). WDS is deprecated from the *next* Windows Server release (KB5129631) but supported for 2025's lifecycle. Fallback: a standalone TFTP service |
 | Persistence | Children persist until the next image update, which recreates them | Clients keep their state between reboots, and images are updated in one place |
@@ -260,7 +263,7 @@ The domain-join files hold machine passwords. They're made when needed and delet
 |---|---|---|
 | One image may not boot on different NICs | Images built in VMs can't serve physical workstations directly | Tested early in phase 2. Fallback: build the image on a physical workstation |
 | Windows 11 booting from iSCSI isn't officially supported; Microsoft's docs cover Windows Server | No vendor support | Widely used with iPXE. Setup onto iSCSI is checked first in phase 2 |
-| WinPE doesn't connect the iSCSI disk in the iBFT (**happened**, phase 2) | Setup can't install onto iSCSI, so there's no golden image | Not yet solved ([docs/image.md](docs/image.md#blocked-winpe-doesnt-connect-the-iscsi-disk)). Still to try: legacy BIOS boot, the media's own WinPE, or installing onto a local disk and moving it to iSCSI |
+| WinPE doesn't connect the iSCSI disk in the iBFT (**happened**, phase 2) | Setup can't install onto iSCSI, so there's no golden image | Solved: Windows routed iSCSI through the iBFT's gateway, which iPXE now leaves out ([docs/image.md](docs/image.md#booting-from-iscsi)) |
 | Windows 11 setup may refuse to install with Secure Boot off | The golden image build stops | Setup's hardware-check bypass in WinPE, or Secure Boot on with the signed iPXE shim |
 | The storage server goes away | Every running client hangs | Behaviour and recovery written down in phase 4 |
 | A write to a golden image | Every child built on it breaks | Read-only attribute and ACL. Versioned file names. Only `Update-Clients.ps1` touches parents |

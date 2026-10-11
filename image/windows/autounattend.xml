@@ -14,13 +14,6 @@
       <UILanguage>@UI_LANGUAGE@</UILanguage>
       <UserLocale>@LOCALE@</UserLocale>
     </component>
-    <!-- The driver pack, subfolders included: added to the installed image, which must have the iSCSI boot NIC's
-         driver before its first boot from that disk -->
-    <component name="Microsoft-Windows-PnpCustomizationsWinPE" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS">
-      <DriverPaths>
-        <PathAndCredentials wcm:action="add" wcm:keyValue="1"><Path>Z:\drivers</Path></PathAndCredentials>
-      </DriverPaths>
-    </component>
     <component name="Microsoft-Windows-Setup" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS">
       <!-- Disk 0 is the iSCSI disk, the build VM's only one. EFI, MSR and C:; setup then shrinks C: to add its own
            recovery partition at the end of the disk. -->
@@ -52,6 +45,17 @@
         <AcceptEula>true</AcceptEula>
         <ProductKey><Key>@PRODUCT_KEY@</Key><WillShowUI>OnError</WillShowUI></ProductKey>
       </UserData>
+    </component>
+  </settings>
+  <!-- The driver pack, subfolders included: added to the installed image, which must have the iSCSI boot NIC's driver
+       before its first boot from that disk. Setup applies this pass once it has applied the image. Not in the windowsPE
+       pass: setup also applies that pass's drivers to the running WinPE, which fails in the ADK's WinPE
+       (E_INVALIDARG at PathAndCredentials), and WinPE has its NIC drivers already. -->
+  <settings pass="offlineServicing">
+    <component name="Microsoft-Windows-PnpCustomizationsNonWinPE" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS">
+      <DriverPaths>
+        <PathAndCredentials wcm:action="add" wcm:keyValue="1"><Path>Z:\drivers</Path></PathAndCredentials>
+      </DriverPaths>
     </component>
   </settings>
   <settings pass="specialize">

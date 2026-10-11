@@ -15,8 +15,8 @@ $target = 'build'
 if ((Test-Path $path) -and (Get-Item $path).IsReadOnly) { throw "golden-v$Version is built already: $path is read-only" }
 
 Step "target $target, for $InitiatorIqn only"
+Wait-TargetIdle $target # build.sh runs this while the build VM is off
 $t = Get-IscsiServerTarget -TargetName $target -ErrorAction SilentlyContinue
-if ($t.Status -eq 'Connected') { throw "target $target has a session: is the build VM still running?" }
 if (-not $t) { New-IscsiServerTarget -TargetName $target -InitiatorIds "IQN:$InitiatorIqn" | Out-Null }
 else { Set-IscsiServerTarget -TargetName $target -InitiatorIds "IQN:$InitiatorIqn" }
 foreach ($lun in (Get-IscsiServerTarget -TargetName $target).LunMappings) {

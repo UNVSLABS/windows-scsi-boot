@@ -12,9 +12,9 @@ if ((Get-Command Get-BitLockerVolume -ErrorAction SilentlyContinue) -and (Get-Bi
   while ((Get-BitLockerVolume C:).VolumeStatus -ne 'FullyDecrypted') { Start-Sleep 10 }
 }
 
-# A smaller image: no downloaded updates, and free space trimmed, which the iSCSI target releases from the VHDX
+# A smaller image: no downloaded updates. Trimming free space can't shrink it: the iSCSI target presents the disk as
+# fully provisioned, so Windows can't trim it.
 Remove-Item C:\Windows\SoftwareDistribution\Download\* -Recurse -Force -ErrorAction SilentlyContinue
-Optimize-Volume -DriveLetter C -ReTrim
 
 # After updates, Windows goes on servicing them for a while, and sysprep fails if it asks in the meantime (0x80010108,
 # "Failed to query pending CBS operations"). Wait for servicing to stop, then try a few times. Sysprep exits 0 even

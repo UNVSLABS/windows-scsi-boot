@@ -64,3 +64,35 @@ function Install-Feature([string[]]$Name) {
   if (-not $result.Success) { throw "installing $Name failed" }
   if ($result.RestartNeeded -eq 'Yes') { Restart-ForRerun "to finish installing $Name" }
 }
+
+# On the storage server, once the target's client is off: wait for the target to have no session. A session outlives a
+# client that's switched off, until the target's idle check logs it off, about two minutes later.
+function Wait-TargetIdle($Target) {
+  $deadline = (Get-Date).AddMinutes(5)
+  while ((Get-IscsiServerTarget -TargetName $Target -ErrorAction SilentlyContinue).Status -eq 'Connected') {
+    if ((Get-Date) -gt $deadline) { throw "target $Target still has a session after 5 minutes: is its client running?" }
+    Start-Sleep 15
+  }
+}
+
+# On the storage server: run $Action with an iSCSI virtual disk's Windows volume, as a drive letter. The iSCSI target
+# holds the file open while the disk is in its list, so the disk leaves the list meanwhile, then goes back with its
+# target mappings. Its clients must be off.
+function Use-WindowsVolume([string]$Path, [scriptblock]$Action, [switch]$ReadOnly) {
+  $targets = @(Get-IscsiServerTarget | Where-Object { $_.LunMappings.Path -contains $Path }).TargetName
+  foreach ($t in $targets) { Remove-IscsiVirtualDiskTargetMapping -TargetName $t -Path $Path }
+  if (Get-IscsiVirtualDisk -Path $Path -ErrorAction SilentlyContinue) { Remove-IscsiVirtualDisk -Path $Path }
+  try {
+    $disk = Mount-DiskImage $Path -Access ($(if ($ReadOnly) { 'ReadOnly' } else { 'ReadWrite' })) -PassThru | Get-Disk
+    try {
+      if ($disk.IsOffline) { $disk | Set-Disk -IsOffline $false } # Windows Server's SAN policy can leave it offline
+      $partition = $disk | Get-Partition | Where-Object { ($_ | Get-Volume).FileSystemLabel -eq 'Windows' }
+      if (-not $partition) { throw "$Path has no volume labelled Windows" }
+      if (-not $partition.DriveLetter) { $partition | Add-PartitionAccessPath -AssignDriveLetter; $partition = $partition | Get-Partition }
+      & $Action "$($partition.DriveLetter):"
+    } finally { Dismount-DiskImage $Path | Out-Null }
+  } finally {
+    Import-IscsiVirtualDisk -Path $Path | Out-Null
+    foreach ($t in $targets) { Add-IscsiVirtualDiskTargetMapping -TargetName $t -Path $Path }
+  }
+}

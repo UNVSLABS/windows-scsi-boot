@@ -38,6 +38,7 @@ $lines = @(
 )
 if ($Mode -eq 'windows') { $lines += 'chain ../client.ipxe' } else {
   $lines += @(
+    'set net0/gateway 0.0.0.0' # not into the iBFT, as boot/client.ipxe
     'sanhook ${root-path} || shell'
     'kernel ../wimboot || shell'
     'initrd ../winpe/BCD BCD || shell'
