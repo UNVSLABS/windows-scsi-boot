@@ -11,7 +11,7 @@ Phase 1 of the [plan](../PLAN.md): the domain controller hands out addresses and
 | DHCP | One scope with the network-boot policies ([below](#dhcp)) | — |
 | TFTP | WDS's TFTP server, serving `boot\x64\snponly.efi` from `C:\RemoteInstall`. WDS's PXE side answers no one ([below](#tftp-through-wds)) | — |
 | HTTP | IIS: `C:\BootFiles` as `http://10.31.0.10/boot/`, static files only | — |
-| iSCSI | — | iSCSI Target Server, started a couple of minutes after boot (delayed start). The 200 GB data disk is `D:` (label `iSCSI`), with `D:\iSCSI\images` for golden images and `D:\iSCSI\clients` for child disks |
+| iSCSI | — | iSCSI Target Server. The 200 GB data disk is `D:` (label `iSCSI`), with `D:\iSCSI\images` for golden images and `D:\iSCSI\clients` for child disks. A second address, 10.31.0.21, with its own portal, for the golden image build's second NIC ([image](image.md#nic-independence)). It's never a source address, so Windows doesn't register it in DNS |
 | Windows Update | Downloads updates; installs them, and restarts, only when an admin says so | The same |
 
 `DISKLESS\admin` is a Domain Admin and Enterprise Admin. Its password, and the domain Administrator's, is the template's admin password.
@@ -42,6 +42,7 @@ WDS is deprecated from the next Windows Server release, but supported on 2025 fo
 | File | From | Used for |
 |---|---|---|
 | `snponly.efi` | iPXE v2.0.0, `ipxeboot.tar.gz` | The firmware loads it over TFTP. It drives the NIC through the firmware's own UEFI driver |
+| `ipxe.efi` | the same | iPXE with its own NIC drivers, which drives every NIC. The golden image build chains it, for its second NIC ([image](image.md#nic-independence)) |
 | `boot.ipxe` | [boot/boot.ipxe](../boot/boot.ipxe) | iPXE fetches it first. It chains `clients/<mac>.ipxe`, or `menu.ipxe` for machines that aren't clients |
 | `menu.ipxe` | [boot/menu.ipxe](../boot/menu.ipxe) | WinPE (`p`, phase 2), Memtest86+ (`m`), an iPXE shell (`s`), or the next boot device (`x`, the default after 30 s) |
 | `client.ipxe`, `build.ipxe` | [boot/](../boot) | A client's menu, and the build VM's boot during a build ([image](image.md)). A machine's own `clients/<mac>.ipxe` sets its disk and chains one of them |
@@ -76,7 +77,7 @@ Each of these was a failure on the way, on 2026-10-10:
 | A client leased 10.31.1.255: in a /16 that's a host address, and the exclusion ended at .254. After the fix, the DHCP server went on offering it and refusing it (NACK, PXE-E07) | The exclusion ends at .255, and the DHCP server restarts after an exclusion change |
 | The client's firmware had no network boot option at all | A VirtIO RNG on clients ([environment](environment.md#what-it-creates)) |
 | Windows Update restarted the storage server twice one night by itself, and every client booted from it would hang meanwhile (found 2026-10-11) | Both servers download updates, but install them and restart only when an admin says so (`AUOptions` 7) |
-| After that restart, the iSCSI target listened on nothing: its service had started before the static address was usable, and failed to bind (event 10, error 10049) | The service starts delayed, a couple of minutes after boot, and `configure.ps1` restarts it if it isn't listening |
+| After that restart, the iSCSI target listened on nothing: its service had started before the static address was usable, and failed to bind (event 10, error 10049) | `configure.ps1` restarts it if it isn't listening. Starting it later isn't possible: Windows refuses delayed start for it (error 87), as it's in a load order group, and the earlier `sc.exe` call to set it failed unnoticed. Check port 3260 after the storage server restarts |
 | iPXE: `memtest.efi... Permission denied` (HTTP 401) | Downloads copied, not moved, into `C:\BootFiles`, and its permissions reset |
 
 ## Setting it up

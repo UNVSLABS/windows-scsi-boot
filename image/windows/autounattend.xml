@@ -15,8 +15,9 @@
       <UserLocale>@LOCALE@</UserLocale>
     </component>
     <component name="Microsoft-Windows-Setup" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS">
-      <!-- Disk 0 is the iSCSI disk, the build VM's only one. EFI, MSR and C:; setup then shrinks C: to add its own
-           recovery partition at the end of the disk. -->
+      <!-- The iSCSI build disk. WinPE's job (image/winpe/build.cmd) sets its number in place of DiskID 0, here and in
+           InstallTo: with a second NIC, the build VM has a small second disk too. EFI, MSR and C:; setup then shrinks
+           C: to add its own recovery partition at the end of the disk. -->
       <DiskConfiguration>
         <Disk wcm:action="add">
           <DiskID>0</DiskID>

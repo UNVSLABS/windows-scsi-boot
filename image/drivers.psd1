@@ -12,13 +12,13 @@
        Tools = 'guest-agent\qemu-ga-x86_64.msi' }
     # Intel 82574L (QEMU's e1000e), the build VM's NIC: 12.15.22.6, from the Microsoft Update Catalog ("Surface - Net -
     # 12.15.22.6", update 156cda9a-c324-463f-ac98-0053703a4036), WHQL-signed. Its INF marks the driver to load when
-    # booting from the network (BootFlags 1), which WinPE needs to reach the iSCSI disk in the iBFT; virtio's doesn't.
-    # Windows 11 has its own 82574L driver, but WinPE doesn't.
+    # booting from the network (BootFlags 1). Windows 11 has its own 82574L driver, but WinPE doesn't.
     @{ Name = 'intel-82574l'
        Url = 'https://catalog.s.download.windowsupdate.com/c/msdownload/update/driver/drvs/2019/04/0_a11ef9665bab5977ed5a26de5b8f3dd7ef52aa2b.cab'
        Sha256 = 'AB558D1D14921C41251FF157DE250A5B6DEDFB89B5F5E1772060AE5DB3015539' }
-    # vmxnet3 1.9.21.0, from the Microsoft Update Catalog ("Broadcom Inc. Net Driver Update (1.9.21.0)"). Windows 11 has
-    # 1.8.17.0 inbox; this newer one stands in for a NIC driver added from a vendor's pack.
+    # vmxnet3 1.9.21.0, from the Microsoft Update Catalog ("Broadcom Inc. Net Driver Update (1.9.21.0)"), the build's
+    # second NIC (servers/settings.psd1). Windows 11 has 1.8.17.0 inbox; this newer one stands in for a NIC driver added
+    # from a vendor's pack.
     @{ Name = 'vmxnet3'
        Url = 'https://catalog.s.download.windowsupdate.com/d/msdownload/update/driver/drvs/2026/07/cf7c5218-fd6d-4f0f-b376-dde4c97289ca_604c6fab636da81ba79a6438ddad6f6a89eaadf6.cab'
        Sha256 = '4F8B5E1B18A848819BF2C2D8A8587C79CA2209CB9A648168F843C7423048D47C' }

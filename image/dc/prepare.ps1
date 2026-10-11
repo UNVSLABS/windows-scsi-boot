@@ -3,13 +3,14 @@
 # - the Windows ADK and its WinPE add-on, and WinPE with the driver pack, served as http://<dc>/boot/winpe/boot.wim;
 # - the install share, \\<dc>\install: the Windows media from the CD drive, the driver pack and the guest agent;
 # - for this build: the answer files on the share, the share's account enabled with a new password, WinPE's startup
-#   script (holding that password) over HTTP, and the build VM's iPXE script and DHCP reservation.
+#   script (holding that password) over HTTP, and the build VM's iPXE script for setup and DHCP reservation.
 # Takes the image's password from servers\secret.txt. Run as admin by image/build.sh, which runs cleanup.ps1 when the
 # build ends. Safe to re-run: the ADK, the downloads, the media and WinPE are made once.
 param(
   [Parameter(Mandatory)][string]$Mac,          # the build VM's
   [Parameter(Mandatory)][string]$InitiatorIqn, # the build VM's, which the build target accepts
   [Parameter(Mandatory)][string]$TargetIqn,    # the build target's
+  [string]$SecondTargetIqn,                    # the second target's, when the build has a second NIC
   [string]$Updates                             # "updates" to install Windows updates in the image
 )
 #Requires -RunAsAdministrator
@@ -152,9 +153,8 @@ if (-not (Test-Path $winpe)) {
         if (Test-Path $cab) { Add-WindowsPackage -Path $mount -PackagePath $cab | Out-Null }
       }
     }
-    # The pack's NIC drivers: WinPE reaches the iSCSI disk and the share through them. WinPE connects the iSCSI disk
-    # in the iBFT only through a NIC whose driver is marked to load when booting from the network (BootFlags 1 in its
-    # INF): Intel's are, virtio's and vmxnet3's aren't. So the build VM has an Intel NIC.
+    # The pack's NIC drivers: WinPE reaches the iSCSI disks in the iBFT and the share through them, once plug and play
+    # has loaded them. Setup also makes each iBFT NIC whose driver WinPE uses a boot NIC of the new Windows.
     $nics = Get-ChildItem "$share\drivers" -Recurse -Filter *.inf | Where-Object { Select-String -Path $_.FullName -Pattern '^\s*Class\s*=\s*Net\b' -Quiet }
     foreach ($inf in $nics) {
       Add-WindowsDriver -Path $mount -Driver $inf.FullName | Out-Null
@@ -178,6 +178,7 @@ $values = @{
   IMAGE_INDEX = $s.ImageIndex; PRODUCT_KEY = $s.ProductKey; LOCALE = $s.Locale; UI_LANGUAGE = $s.UILanguage
   TIMEZONE = $s.TimeZone; USER = $s.ImageUser; PASSWORD = $password
   DC = $s.DcAddress; SAN = $s.SanAddress; ACCOUNT = $account; SHARE_PASSWORD = $sharePassword
+  DISKS = $(if ($SecondTargetIqn) { 2 } else { 1 }) # the iBFT's, which WinPE waits for
 }
 # On the share: the answers, which hold the image's password, readable only by admins and the share's account
 $build = "$share\build"
@@ -196,17 +197,8 @@ $id = $Mac.ToLower() -replace ':', '-' # as iPXE's ${net0/mac:hexhyp}, and the D
 $job = "$($s.BootFiles)\jobs\$id.cmd"
 New-Item -ItemType Directory -Force (Split-Path $job) | Out-Null
 Expand-Template "$root\image\winpe\build.cmd" $job $values -Cmd
-Copy-Item "$root\boot\*.ipxe" $s.BootFiles -Force
-# The build VM's own script: the build target, then the build's boot (boot/build.ipxe)
-$script = "$($s.BootFiles)\clients\$id.ipxe"
-[IO.File]::WriteAllText($script, (@(
-  '#!ipxe'
-  "# $($s.BuildVm), while image/build.sh builds a golden image. Deleted when the build ends."
-  "set initiator-iqn $InitiatorIqn"
-  "set root-path iscsi:$($s.SanAddress)::::$TargetIqn"
-  'chain ../build.ipxe'
-) -join "`n") + "`n")
-icacls $s.BootFiles /reset /t /q | Out-Null # IIS's anonymous user must be able to read every file
+# The build VM's own script, for setup: the build's disks, then the build's boot (boot/build.ipxe)
+& "$PSScriptRoot\build-script.ps1" $Mac $InitiatorIqn $TargetIqn setup -SecondTargetIqn $SecondTargetIqn
 
 # A reservation, so the build VM can be found while it builds. Fixed MACs are 02:00 and then the address (lab/main.tf).
 $scope = $s.Network.Split('/')[0]
@@ -218,10 +210,13 @@ if (-not (Get-DhcpServerv4Reservation -ScopeId $scope | Where-Object ClientId -e
 
 Step 'check'
 # What the build VM fetches, as iPXE fetches it: anonymously
-foreach ($path in 'build.ipxe', "clients/$id.ipxe", "jobs/$id.cmd", 'winpe/boot.wim', 'winpe/BCD', 'wimboot') {
+$paths = 'build.ipxe', "clients/$id.ipxe", "jobs/$id.cmd", 'winpe/boot.wim', 'winpe/BCD', 'wimboot'
+if ($SecondTargetIqn) { $paths += 'ipxe.efi' } # from servers/dc/configure.ps1
+foreach ($path in $paths) {
   $url = "http://$($s.DcAddress)/boot/$path"
   $response = Invoke-WebRequest $url -UseBasicParsing -Method Head
   if ($response.StatusCode -ne 200) { throw "$url returned HTTP $($response.StatusCode)" }
 }
 "build VM: $($s.BuildVm), $Mac, reserved $address, initiator $InitiatorIqn"
 "target: $TargetIqn"
+if ($SecondTargetIqn) { "second target: $SecondTargetIqn, through $($s.SanSecondAddress)" }

@@ -2,8 +2,8 @@
 rem WinPE's job on the build VM (docs/image.md). image\dc\prepare.ps1 fills in the @...@ values and serves this from the
 rem domain controller as jobs\<mac>.cmd while a build runs, and WinPE fetches and runs it (image\winpe\startnet.cmd).
 rem It installs Windows from the install share onto the iSCSI disk that iPXE attached, copies the first logon's files
-rem into the new Windows, and restarts. iPXE then boots that disk. On a failure it stops at a prompt, and
-rem image\build.sh times out.
+rem into the new Windows, and powers off. image\build.sh then boots that disk. On a failure it stops at a prompt, and
+rem build.sh times out.
 echo.
 echo Building a golden image: Windows setup from \\@DC@\install onto the iSCSI disk
 
@@ -17,19 +17,25 @@ echo Couldn't map \\@DC@\install
 goto failed
 :mapped
 
-rem The iSCSI disk must be the only disk, as the answer file wipes disk 0. WinPE connects it from the iBFT once the NIC's
-rem driver has loaded, which can take a minute or two more.
-echo list disk> X:\disks.txt
+rem The iBFT's disks: the build disk, and with a second NIC a small disk through it, @DISKS@ in all. WinPE connects them
+rem once the NICs' drivers have loaded, which can take a minute or two more. All of them, before setup reads the iBFT.
 for /l %%i in (1,1,36) do (
-  diskpart /s X:\disks.txt > X:\disks.out
-  find "Disk 0" X:\disks.out >nul && goto disk
+  powershell -NoProfile -Command "exit [int](@(Get-Disk).Count -lt @DISKS@)" && goto disks
   ping -n 6 127.0.0.1 >nul
 )
-echo No disk: WinPE didn't connect to the iSCSI target in the iBFT
+echo Not all @DISKS@ disks: WinPE didn't connect to every iSCSI target in the iBFT
+powershell -NoProfile -Command "Get-Disk | Format-Table Number, FriendlyName, Size, BusType -AutoSize"
 goto diagnose
-:disk
-type X:\disks.out
-find "Disk 1" X:\disks.out >nul && (echo More than one disk& goto failed)
+:disks
+powershell -NoProfile -Command "Get-Disk | Format-Table Number, FriendlyName, Size, BusType -AutoSize"
+
+rem Setup installs onto the largest, the build disk, which needn't be disk 0: the answer file's DiskID 0 becomes its
+rem number, in a copy
+set DISK=
+for /f %%n in ('powershell -NoProfile -Command "(Get-Disk | Sort-Object Size | Select-Object -Last 1).Number"') do set DISK=%%n
+if not defined DISK (echo No disk number& goto failed)
+powershell -NoProfile -Command "(Get-Content Z:\build\autounattend.xml -Raw).Replace('<DiskID>0</DiskID>', '<DiskID>%DISK%</DiskID>') | Set-Content X:\autounattend.xml -Encoding UTF8" || goto failed
+echo Installing onto disk %DISK%
 
 rem Windows 11's setup checks for Secure Boot, which is off: the stock iPXE is unsigned
 reg add HKLM\SYSTEM\Setup\LabConfig /v BypassSecureBootCheck /t REG_DWORD /d 1 /f >nul
@@ -37,7 +43,7 @@ reg add HKLM\SYSTEM\Setup\LabConfig /v BypassSecureBootCheck /t REG_DWORD /d 1 /
 rem The previous version of setup, sources\setup.exe: 24H2's new one has been seen to quit at an iSCSI disk. /noreboot
 rem leaves time to copy files in afterwards.
 echo Running setup
-Z:\media\sources\setup.exe /unattend:Z:\build\autounattend.xml /noreboot
+Z:\media\sources\setup.exe /unattend:X:\autounattend.xml /noreboot
 echo Setup exited with %errorlevel%
 rem In case setup left a process running. WinPE has no tasklist or findstr.
 :wait
@@ -67,9 +73,11 @@ for %%s in (e1iexpress e1i68x64 netkvm vmxnet3ndis6 iScsiPrt MSiSCSI Tcpip) do (
 )
 reg unload HKLM\diskless >nul
 type %LOG%
-echo Restarting into the new Windows
+rem Off, not restarted: build.sh takes the second NIC away before the new Windows' first boot, and sets the build VM's
+rem boot to that Windows
+echo Powering off: image\build.sh then boots the new Windows
 ping -n 20 127.0.0.1 >nul
-wpeutil reboot
+wpeutil shutdown
 goto :eof
 
 :diagnose

@@ -1,25 +1,44 @@
 #!ipxe
-# The build VM's boot while image/build.sh builds a golden image. Its own script, clients/<mac>.ipxe, which build.sh
-# writes for the build, sets initiator-iqn and root-path (the build target), then chains this. Windows setup restarts
-# several times: once it has written Windows' boot files to the disk, the disk boots. Until then, sanboot fails and
-# WinPE starts, with the disk attached. WinPE fetches the build's job, jobs/<mac>.cmd, which installs Windows onto it.
+# The build VM's boot while image/build.sh builds a golden image (docs/image.md). Its own script, clients/<mac>.ipxe,
+# which build.sh writes for each phase of the build (image/dc/build-script.ps1), sets initiator-iqn, root-path (the
+# build target) and build-phase, then chains this:
+#   setup    WinPE, with the blank build disk attached. WinPE fetches the build's job, jobs/<mac>.cmd, which installs
+#            Windows onto the disk and powers off.
+#   windows  the disk's Windows, which provisions itself, then sysprep powers off.
 
 # Windows sends iSCSI through the gateway in the iBFT, even to a target on its own subnet, and a gateway that doesn't
 # route it back to the subnet breaks the connection. iPXE copies the NIC's gateway into the iBFT, so it's cleared first.
 # Everything iPXE fetches is on this subnet.
 set net0/gateway 0.0.0.0
-echo Building a golden image on ${root-path}
-sanboot ${root-path} || goto install
-exit
+goto ${build-phase} || goto failed
 
-:install
-echo No Windows on the disk yet: installing it through WinPE
+:setup
+echo Building a golden image on ${root-path}: WinPE and setup
+isset ${second-path} || goto one-nic
+# A second NIC (net1), whose model setup makes a boot NIC of the image too. iPXE puts a disk's NIC in the iBFT by routing
+# to its target, so a second, small disk goes through net1 to the storage server's second address, and each NIC has a
+# host route to its own (route0, route1). snponly.efi drives only the NIC it was loaded from, so the full iPXE runs this
+# again first: chained before anything is attached, as a failed boot of the blank disk first left an iBFT with one NIC.
+isset ${net1/mac} || chain --autofree ipxe.efi || goto failed
+dhcp net1 || goto failed
+set net1/gateway 0.0.0.0
+set net0/static-routes:hex ${route0}
+set net1/static-routes:hex ${route1}
+sanhook --drive 0x80 ${root-path} || goto failed
+sanhook --drive 0x81 ${second-path} || goto failed
+goto winpe
+:one-nic
 sanhook ${root-path} || goto failed
+:winpe
 kernel wimboot || goto failed
 initrd winpe/BCD BCD || goto failed
 initrd winpe/boot.sdi boot.sdi || goto failed
 initrd winpe/boot.wim boot.wim || goto failed
 boot || goto failed
+
+:windows
+echo Building a golden image on ${root-path}: Windows
+sanboot ${root-path} || goto failed
 
 :failed
 echo The build's boot failed. Press a key for an iPXE shell.

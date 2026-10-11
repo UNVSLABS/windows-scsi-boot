@@ -22,7 +22,7 @@ servers = {
   }
 }
 
-# Three NIC models, for the NIC-independence test. The golden image is built on virtio (PLAN.md).
+# Three NIC models, for the NIC-independence test (PLAN.md; docs/image.md)
 clients = {
   "dl-ws-1" = { vm_id = 5031, address = "10.31.1.1", cores = 2, memory = 4096, nic_model = "virtio" }
   "dl-ws-2" = { vm_id = 5032, address = "10.31.1.2", cores = 2, memory = 4096, nic_model = "e1000e" }
@@ -30,8 +30,8 @@ clients = {
 }
 
 # Builds golden images on the build target, through WinPE (image/build.sh). Its reservation is at the top of the range.
-# An Intel NIC: WinPE reaches the iSCSI disk only through a NIC whose driver loads when booting from the network, which
-# virtio's doesn't (docs/image.md).
+# An Intel NIC: setup makes the build's NICs boot NICs of the image, and fails at that for virtio's (docs/image.md).
+# build.sh adds a second NIC (net1, servers/settings.psd1) only while setup runs, and removes it: not in Terraform.
 build_vms = {
   "dl-build-1" = { vm_id = 5030, address = "10.31.1.250", cores = 4, memory = 4096, nic_model = "e1000e" }
 }
