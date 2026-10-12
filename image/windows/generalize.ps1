@@ -1,7 +1,8 @@
 # Generalise the golden image with sysprep, add the clients' first boot (firstboot-entry.ps1), then power off
-# (docs/image.md). Run once as SYSTEM at the startup after firstlogon.ps1, or after reseal.ps1 when an image is changed,
-# from C:\Windows\Setup\build. image/build.sh and change.sh wait for the build VM to stop. If sysprep fails, the VM stays
-# on for a look. Log: C:\Windows\Temp\generalize.log
+# (docs/image.md). First, the part of Windows' automatic maintenance that each client would otherwise do for itself.
+# Run once as SYSTEM at the startup after firstlogon.ps1, or after reseal.ps1 when an image is changed, from
+# C:\Windows\Setup\build. image/build.sh and change.sh wait for the build VM to stop. If sysprep fails, the VM stays on
+# for a look. Log: C:\Windows\Temp\generalize.log
 $ErrorActionPreference = 'Stop'
 Start-Transcript C:\Windows\Temp\generalize.log
 Unregister-ScheduledTask -TaskName generalize -Confirm:$false
@@ -11,6 +12,26 @@ if ((Get-Command Get-BitLockerVolume -ErrorAction SilentlyContinue) -and (Get-Bi
   'Decrypting C:'
   Disable-BitLocker C: | Out-Null
   while ((Get-BitLockerVolume C:).VolumeStatus -ne 'FullyDecrypted') { Start-Sleep 10 }
+}
+
+# Windows' automatic maintenance runs in a client's first idle minutes, and everything it moves or rewrites lands in the
+# client's own child disk (docs/clients.md, Automatic maintenance). So nothing defragments a client's disk, which is
+# never worth it:
+# - no boot optimization: SysMain, the prefetcher, has defrag.exe -b move the files that start Windows and apps
+#   together, unless EnableAutoLayout is 0;
+# - no scheduled defrag. The first time defrag.exe runs after setup, whatever runs it, it registers its task again,
+#   enabled, unless fUpgradeRestored says it has done so already.
+# And .NET's queued native images are compiled here, once for every client. Not fatal: an image without them works,
+# and clients compile them.
+foreach ($key in 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\OptimalLayout', 'HKLM:\SOFTWARE\Microsoft\Dfrg\TaskSettings') {
+  if (-not (Test-Path $key)) { New-Item $key | Out-Null }
+}
+Set-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\OptimalLayout' EnableAutoLayout 0 -Type DWord
+Disable-ScheduledTask -TaskPath '\Microsoft\Windows\Defrag\' -TaskName ScheduledDefrag | ForEach-Object { "scheduled defrag: $($_.State)" }
+Set-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Dfrg\TaskSettings' fUpgradeRestored 1 -Type DWord
+foreach ($ngen in Get-ChildItem "$env:SystemRoot\Microsoft.NET\Framework*\v4.*\ngen.exe") {
+  $out = @(& $ngen.FullName executeQueuedItems /nologo)
+  "$($ngen.FullName) executeQueuedItems: exit code $LASTEXITCODE, $(@($out -match 'Compiling assembly').Count) assemblies compiled"
 }
 
 # A smaller image: no downloaded updates. Trimming free space can't shrink it: the iSCSI target presents the disk as

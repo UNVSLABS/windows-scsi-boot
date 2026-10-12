@@ -16,6 +16,7 @@ Phase 2 of the [plan](../PLAN.md): a sysprepped Windows 11 Enterprise LTSC 2024 
 | A clean build with the scripts as they are: `golden-v4` | **Done 2026-10-11**: 11.6 GB, in 25 minutes (WinPE and setup 13, Windows 12). Boots the e1000e and vmxnet3 clients |
 | The clients' first boot in the image: WinPE, which makes a client's NIC a boot NIC on its own ([clients](clients.md#the-first-boot)): `golden-v5` | **Done 2026-10-12** |
 | A change to an image as a new version, rather than a build ([below](#changing-an-image)): `golden-v6`, `golden-v5` with a longer iSCSI timeout | **Done 2026-10-12**: 13 minutes (copy 2.5, the first boot and Windows 5, the seal 4) |
+| The seal's maintenance step: no defrag, and .NET's native images compiled, so that clients don't each do it ([clients](clients.md#automatic-maintenance)) | **Done 2026-10-13**: `golden-v9`, by way of `golden-v7` and `golden-v8` |
 
 ## What a build makes
 
@@ -32,6 +33,7 @@ Phase 2 of the [plan](../PLAN.md): a sysprepped Windows 11 Enterprise LTSC 2024 
 | Settings | en-AU formats and keyboard, Adelaide time, en-US display. No automatic BitLocker, no sleep, no hibernation |
 | iSCSI timeout | 10 minutes, rather than Windows' 60 seconds, for the iSCSI initiator to hold a disk's requests while it reconnects (`MaxRequestHoldTime`), so that clients wait while the storage server restarts ([clients](clients.md#the-storage-server), [image/windows/iscsi-timeouts.ps1](../image/windows/iscsi-timeouts.ps1)). Since `golden-v6`, which got them in a change. `firstlogon.ps1` sets them in a build, which hasn't run since |
 | Windows Update | Off, by local policy. Clients get updates in new golden images. `--updates` installs them in the build |
+| Automatic maintenance | No defrag: neither SysMain's boot optimization (`EnableAutoLayout` 0) nor the scheduled defrag (its task off, and kept off). And .NET's queued native images compiled. So clients don't each do it into their own child disks ([clients](clients.md#automatic-maintenance)). `generalize.ps1` does it before sysprep, in a build and in a change. Since `golden-v9` |
 | Sysprep | Generalised for other hardware (no `/mode:vm`), keeping every installed driver and device. A client's first boot takes a random name, or the one New-Client gives it, and its own SID, with no questions |
 | First boot | A WinPE, `Windows\Setup\Diskless\firstboot.wim`, as Windows Boot Manager's default: on a client's first boot it makes the client's NIC a boot NIC, sets the default back to Windows, and restarts ([clients](clients.md#the-first-boot)). Since `golden-v5` |
 
@@ -54,7 +56,8 @@ image/build.sh <N>                                                    PC, WSL
                  (/noreboot), copy the first logon's files, power off
  4 PC            take net1 away, if it's there; dl-build-1's boot script for windows
  5 dl-build-1    PXE ─▶ snponly.efi ─▶ build.ipxe, windows: sanboot the build disk ─▶ setup finishes
-                 ─▶ firstlogon.ps1 ─▶ restart ─▶ generalize.ps1: sysprep, the clients' first boot, then power off
+                 ─▶ firstlogon.ps1 ─▶ restart ─▶ generalize.ps1: no defrag, .NET's native images, sysprep, the
+                 clients' first boot, then power off
  6 vm-dl-san-1   take golden-v<N> off the target, check that it's generalised and has the first boot, make it
                  read-only
  7 vm-dl-dc-1    remove the build's files, and disable the share's account (also when the build fails)
@@ -195,12 +198,12 @@ image/change.sh <N> --seal
  4 vm-dl-san-1   golden-v<N> isn't sealed, and the build VM runs it
  5 dl-build-1    over SSH (image/windows/reseal.ps1): what a build leaves in C:\Windows\Setup\build, sysprep.xml with
                  the image's password, generalize.ps1 and the clients' first boot; generalize.ps1 at the next startup;
-                 restart ─▶ sysprep, the first boot's boot entry again, power off
+                 restart ─▶ no defrag, .NET's native images, sysprep, the first boot's boot entry again, power off
  6 vm-dl-san-1   the seal, as for a build (image/san/seal.ps1): generalised, the first boot there, read-only
  7 vm-dl-dc-1    dl-build-1's boot script removed
 ```
 
-- **What a change keeps:** everything in the image, the NIC families' reflected drivers and the build NIC's interface among them, and its first-boot WinPE. The first-boot step itself, `firstboot.ps1`, is the repo's: the image takes the current one.
+- **What a change keeps:** everything in the image, the NIC families' reflected drivers and the build NIC's interface among them, and its first-boot WinPE. The first-boot step itself, `firstboot.ps1`, is the repo's: the image takes the current one. So is the seal, `generalize.ps1`.
 - **A change goes on until it's sealed.** If the build VM goes off before `--seal`, `image/change.sh <N>` starts it on the same copy again, with the changes made so far. To drop a change, `image/remove.sh <N>` once the build VM is off.
 - **Clients don't see it** until `clients/update-clients.sh <N>` moves them to it ([clients](clients.md#updating-clients)). The image it was copied from stays as it is, for the clients still on it.
 - **Each change generalises the image once more,** and each leaves something behind: the logs and profile of the change's own session, for one. A new build from time to time starts clean.
@@ -212,7 +215,7 @@ image/change.sh 6                # golden-v6, from the newest sealed image, runn
 ssh admin@10.31.1.250            # the changes, as admin; or RDP, or its console
 image/change.sh 6 --seal         # about 5 minutes; then clients/update-clients.sh 6
 ```
-`golden-v6`'s change was [image/windows/iscsi-timeouts.ps1](../image/windows/iscsi-timeouts.ps1), run through the same SSH connection the scripts use: 13 minutes in all.
+`golden-v6`'s change was [image/windows/iscsi-timeouts.ps1](../image/windows/iscsi-timeouts.ps1), run through the same SSH connection the scripts use: 13 minutes in all. `golden-v7` to `golden-v9` had no change by hand: `--seal` straight after the start, each for a new part of the seal's maintenance step ([clients](clients.md#automatic-maintenance)).
 
 ## What each piece is for
 

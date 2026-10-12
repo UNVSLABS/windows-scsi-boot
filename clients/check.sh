@@ -4,7 +4,7 @@
 # With --boot, it first starts those that are Proxmox VMs and off, all at once, and waits up to 30 minutes for each to
 # be set up and joined to the domain. Then for each client: from the storage server, its disk and whether its target has
 # a session (clients/san/show-client.ps1); and from Windows, through a VM client's QEMU guest agent, its name and machine
-# SID, domain membership, NIC, the Group Policy settings it has, and its first boot's log.
+# SID, domain membership, NIC, the Group Policy settings it has, whether defrag is off, and its first boot's log.
 set -euo pipefail
 
 BOOT=
@@ -69,6 +69,7 @@ $gpos = (Get-ChildItem "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Group Po
 "group policy: $($gpos -join ", ")"
 "pagefile: $((Get-CimInstance Win32_PageFileUsage | ForEach-Object { "$($_.Name) $($_.AllocatedBaseSize) MB" }) -join ", "); set: $((Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management").PagingFiles)"
 "power: hibernation $((Get-ItemProperty HKLM:\SYSTEM\CurrentControlSet\Control\Power).HibernateEnabled), fast startup $((Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Power").HiberbootEnabled), Windows Update NoAutoUpdate $((Get-ItemProperty HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU -ErrorAction SilentlyContinue).NoAutoUpdate)"
+"defrag: scheduled $((Get-ScheduledTask -TaskPath "\Microsoft\Windows\Defrag\" -TaskName ScheduledDefrag).State), boot layout EnableAutoLayout $((Get-ItemProperty HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\OptimalLayout -ErrorAction SilentlyContinue).EnableAutoLayout)"
 "answer file: $(if (Test-Path C:\Windows\Panther\unattend.xml) { "still there" } else { "deleted" })"
 Get-Content C:\Windows\Temp\firstboot.log -ErrorAction SilentlyContinue | Where-Object { $_ -match "^(NIC|image|boot manager|done|FAILED)" } | ForEach-Object { "first boot: $_" }' || true
 done

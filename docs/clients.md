@@ -12,6 +12,7 @@ Phases 3 and 4 of the [plan](../PLAN.md): a client is a machine with no disk tha
 | Three clients boot together from one golden image, joined to the domain; a domain user logs on; child disk sizes | **Done 2026-10-12** ([results](#results)) |
 | `update-clients.sh`: the three clients from `golden-v5` to `golden-v6`, end to end | **Done 2026-10-12** ([results](#an-update-golden-v5-to-golden-v6)) |
 | What clients do when the storage server or the domain controller goes away, and how to recover them | **Done 2026-10-12** ([below](#when-a-server-restarts)): clients wait up to 10 minutes for the storage server since `golden-v6` |
+| Windows' automatic maintenance grew a new client's disk from 1.5 to 7.5–8 GB within half an hour | **Partly done 2026-10-13:** about 4.3 GB since `golden-v9`, with no defrag and the native images compiled in the image; about 2.5 GB is still unexplained ([below](#automatic-maintenance)) |
 
 ## What a client is
 
@@ -87,6 +88,24 @@ The GPO `Diskless clients`, linked to the OU `Diskless clients`, which New-Clien
 - **Policies and preferences.** The update and power settings are policies; the rest have no policy, so they're Group Policy preferences, which write the registry.
 - **Only what differs is set.** Each change is a new version of the GPO, which every client applies again.
 - **The startup script** goes into the GPO's folder in SYSVOL with a `scripts.ini`, and the GPO lists the scripts extension. Group Policy runs startup scripts under the execution policy, which allows none by default, so a `.cmd` starts PowerShell with `-ExecutionPolicy Bypass`.
+
+## Automatic maintenance
+
+Windows runs its automatic maintenance when a machine is idle: defragmenting, compiling .NET's native images, Defender's scans, and some 50 smaller tasks. A new client has never had any, so it starts about 10 minutes after the client's Windows does, at its logon screen. Everything it moves or writes lands in the client's child disk for good: the iSCSI target can't trim it ([image](image.md#what-each-piece-is-for)).
+
+The golden image takes away what grew children most, before sysprep ([image/windows/generalize.ps1](../image/windows/generalize.ps1)):
+
+| | How | Since |
+|---|---|---|
+| No boot optimization | `EnableAutoLayout` 0 in `HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\OptimalLayout` | `golden-v9` |
+| No scheduled defrag | The task `\Microsoft\Windows\Defrag\ScheduledDefrag` disabled, and `fUpgradeRestored` 1 in `HKLM\SOFTWARE\Microsoft\Dfrg\TaskSettings`, so that it stays disabled | `golden-v8` |
+| .NET's native images | Compiled: `ngen executeQueuedItems`, for .NET Framework 4's 32- and 64-bit | `golden-v7` |
+
+- **The boot optimization was the largest part found.** SysMain, the prefetcher, lists the files that start Windows and its apps in `Windows\Prefetch\Layout.ini`, and at the first maintenance has `defrag.exe -b` move them together at the start of the disk. That was some 6,600 files into the first 2 GB, and together with the scheduled defrag it accounted for about 3 GB of a child's growth to 7.5–8 GB ([results](#maintenance-results)). It doesn't go through the scheduled defrag task: with the task off, it still ran.
+- **The scheduled defrag task comes back unless `fUpgradeRestored` is set.** The first time `defrag.exe` runs after Windows setup, whatever runs it, it deletes its task and registers it again, enabled, then sets `fUpgradeRestored`. On `golden-v7`, with the task only disabled, something ran `defrag.exe` as maintenance started, most likely the boot optimization, and the task was back and running 20 seconds later. Its other setting there, `fTaskEnabled` 0, made no difference.
+- **.NET's native images** were 340 MB that each client compiled for itself.
+- **In the image, rather than Group Policy:** a client has it from its first start, and the native images can only be compiled once in the image. `clients/check.sh` shows a client's defrag settings.
+- **What's left: about 2.5 GB, not yet found.** A client on `golden-v9` still grows from 1.5 GB to about 4.3 GB at its first maintenance, mostly 4 to 9 minutes into it, and very little after. NTFS's change journal shows no file written in those minutes, and no defrag ran. It isn't the pagefile, which was unused, nor reads, last-access times or trims, each tried on a client. A disk I/O trace of a new client's first maintenance would show what it is. Of what's visible, the largest is a Windows App Runtime package, 170 MB, that maintenance installed in two rounds out of three.
 
 ## Removing a client
 
@@ -223,7 +242,7 @@ The plan's test for phase 4, 2026-10-12: `golden-v6` made from `golden-v5` by `i
 - **`image/change.sh`** took 13 minutes for `golden-v6`: the copy 2.5, while the clients ran on `golden-v5`; the build VM's first boot and Windows 5; the seal 4. 12.2 GB, as `golden-v5`.
 - **`remove-client.sh` and `new-client.sh` for dl-ws-3,** after the fix to its reservation, left no reservation or lease, then made both again.
 - **`image/remove.sh`** refused `golden-v6`, with its three disks, and deleted a sealed test image, whether SYSTEM or Administrators owned it.
-- **Not fixed: Windows' automatic maintenance grows a child disk.** dl-ws-1, left at its logon screen, grew from 1.08 GB to 6.96 GB within 20 minutes of its first boot, when Windows' idle maintenance ran: among others the scheduled defrag, which reported a boot optimization of C: (event 258), .NET's native image tasks, and Defender's. On a differencing disk, every block that's moved or rewritten lands in the child. dl-ws-2, with a user logged on, was at 2.52 GB. Likely fixes, not yet tried: the defrag task off on clients, and the build running the maintenance once before sysprep.
+- **Windows' automatic maintenance grew a child disk.** dl-ws-1, left at its logon screen, grew from 1.08 GB to 6.96 GB within 20 minutes of its first boot, when Windows' idle maintenance ran. dl-ws-2, with a user logged on, was at 2.52 GB. Mostly fixed since `golden-v9` ([below](#maintenance-results)).
 
 ### Restart results
 
@@ -236,6 +255,24 @@ The tests behind [When a server restarts](#when-a-server-restarts), 2026-10-12, 
 | Storage server restart (`shutdown /r`) | `golden-v5` | 34–36 s | All carried on. Windows was down for 6 seconds, and the clients' sessions were back 26 seconds after it booted |
 | Storage server off for 3 minutes | `golden-v5` | — | CRITICAL_PROCESS_DIED 84 seconds in, on all three. At boot the target didn't bind, and its startup task restarted it a minute later; the clients' iPXE, retrying, had them back in Windows 50 seconds after that |
 | Storage server off for 3 minutes | `golden-v6` | 203–204 s | All carried on, with no restart. The target was back 12–17 seconds after the server started, and the clients went on at once |
+
+### Maintenance results
+
+The tests behind [Automatic maintenance](#automatic-maintenance), 2026-10-12 and 13: three rounds, each with the three clients on new disks, started together and left at their logon screens. Their disks' sizes come from the storage server every 5 minutes, so the clients see nothing of it. Each image was `image/change.sh` from the one before, sealed straight away.
+
+| Minutes from power-on | `golden-v6`: nothing changed (dl-ws-3, round 1) | `golden-v7`: native images; the defrag task disabled (dl-ws-1, dl-ws-2, round 1) | `golden-v8`: and the task stays disabled (all three, round 2) | `golden-v9`: and no boot optimization (all three, round 3) |
+|---|---|---|---|---|
+| 15: set up, maintenance not yet started | 1.55 GB | 1.50, 1.53 GB | 1.55–1.65 GB | 1.52–1.58 GB |
+| 25 | 7.02 | 7.00, 4.87 | 4.93–6.80 | 4.12–4.15 |
+| 45–50 | 7.96 | 7.78; dl-ws-2 used for tests | 5.58–7.83 | 4.30–4.40 |
+
+- **Maintenance started 16 minutes after power-on in every round,** about 10 minutes after Windows: the scheduled tasks' last run times all show the same minute.
+- **`golden-v6`:** the scheduled defrag ran, with a boot optimization (event 258); the .NET tasks wrote 341 MB of native images.
+- **`golden-v7`:** no native images. But the defrag task was enabled again: at the start of maintenance, `NT AUTHORITY\System` deleted it and registered it again (Task Scheduler events 141, 106), and it ran 20 seconds later. Run by hand on a client, `defrag.exe C: /A` did the same whenever `fUpgradeRestored` wasn't set, and nothing once it was. With `fTaskEnabled` 0 it still registered the task enabled.
+- **`golden-v8`:** the task stayed disabled and never ran, yet a boot optimization still finished 4 minutes into maintenance. SysMain had just written `Layout.ini`, a list of some 6,600 files, and `defrag -b` had laid them out over the first 2 GB of the volume (`LcnEndLocation` 527,305 in `Dfrg\BootOptimizeFunction`).
+- **`golden-v9`:** no defrag of any kind: no event, and no `BootOptimizeFunction` key. SysMain still wrote `Layout.ini`. The disks still grew by 1.6–2.2 GB between minutes 20 and 25 ([what's left](#automatic-maintenance)). From minute 18 to 26, dl-ws-3's NTFS change journal had 124 records, all for small files: Defender's quick scan finishing, BITS's and the state repository's databases, an Update Orchestrator log. On dl-ws-1, no process still running had written more than 43 MB since boot.
+- **Tried on a client, without growth:** reading 7 GB of files, twice, an hour apart for last-access times; deleting a 471 MB file of the image; creating and deleting a 1 GB file that was never written.
+- **`golden-v7` to `golden-v9`** are 12.2 GB each, as `golden-v6`. With no change by hand, each took about 13 minutes.
 
 ## Using it
 
@@ -252,7 +289,7 @@ From this repo in WSL, after [the golden image](image.md), with `golden-v5` or l
    . ~/.config/proxmox/diskless.env
    clients/check.sh dl-ws-1               # --boot to start VM clients that are off and wait for them first
    ```
-   For a VM client it shows its name, machine SID, domain and secure channel, NIC, the GPO and its settings, and its first boot's log; for any client, its disk and whether it's running.
+   For a VM client it shows its name, machine SID, domain and secure channel, NIC, the GPO and its settings, whether defrag is off, and its first boot's log; for any client, its disk and whether it's running.
 
 **To move the clients to a new golden image,** once it's built (`image/build.sh`) or changed (`image/change.sh`, [image](image.md#changing-an-image)): switch them off, then
 ```sh
