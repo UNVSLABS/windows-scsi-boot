@@ -15,6 +15,7 @@ Phase 2 of the [plan](../PLAN.md): a sysprepped Windows 11 Enterprise LTSC 2024 
 | A second NIC family through the build: vmxnet3, standing in for a physical one | **Done 2026-10-11**: `golden-v3` boots e1000e and vmxnet3 clients ([results](#results)) |
 | A clean build with the scripts as they are: `golden-v4` | **Done 2026-10-11**: 11.6 GB, in 25 minutes (WinPE and setup 13, Windows 12). Boots the e1000e and vmxnet3 clients |
 | The clients' first boot in the image: WinPE, which makes a client's NIC a boot NIC on its own ([clients](clients.md#the-first-boot)): `golden-v5` | **Done 2026-10-12** |
+| A change to an image as a new version, rather than a build ([below](#changing-an-image)): `golden-v6`, `golden-v5` with a longer iSCSI timeout | **Done 2026-10-12**: 13 minutes (copy 2.5, the first boot and Windows 5, the seal 4) |
 
 ## What a build makes
 
@@ -29,6 +30,7 @@ Phase 2 of the [plan](../PLAN.md): a sysprepped Windows 11 Enterprise LTSC 2024 
 | Remote access | OpenSSH with the servers' keys (Microsoft's MSI), RDP and ping, on every network profile |
 | Drivers | The driver pack, added by setup before the image's first boot: virtio-win 0.1.302 (all its Windows 11 drivers), Intel 82574L 12.15.22.6 and vmxnet3 1.9.21.0. Plus the QEMU guest agent |
 | Settings | en-AU formats and keyboard, Adelaide time, en-US display. No automatic BitLocker, no sleep, no hibernation |
+| iSCSI timeout | 10 minutes, rather than Windows' 60 seconds, for the iSCSI initiator to hold a disk's requests while it reconnects (`MaxRequestHoldTime`), so that clients wait while the storage server restarts ([clients](clients.md#the-storage-server), [image/windows/iscsi-timeouts.ps1](../image/windows/iscsi-timeouts.ps1)). Since `golden-v6`, which got them in a change. `firstlogon.ps1` sets them in a build, which hasn't run since |
 | Windows Update | Off, by local policy. Clients get updates in new golden images. `--updates` installs them in the build |
 | Sysprep | Generalised for other hardware (no `/mode:vm`), keeping every installed driver and device. A client's first boot takes a random name, or the one New-Client gives it, and its own SID, with no questions |
 | First boot | A WinPE, `Windows\Setup\Diskless\firstboot.wim`, as Windows Boot Manager's default: on a client's first boot it makes the client's NIC a boot NIC, sets the default back to Windows, and restarts ([clients](clients.md#the-first-boot)). Since `golden-v5` |
@@ -175,6 +177,42 @@ The second NIC is optional. A build with only the build VM's own NIC makes an im
 `golden-v1` was built this way, by an earlier version of the scripts, and gave the first rows of the [results](#results). The scripts as they are haven't yet built a one-family image.
 
 `bootflags` and `bootstart` change only the services of NICs the image has installed, and copying WinPE's service in isn't reflection, so neither helps a model setup hasn't seen. An undocumented `drvstore.dll` function that setup's reflection is reported to use (`DriverStoreOfflineAddDriverPackageW`) returned "invalid parameter" for every flag value tried, even for the package setup had reflected, and was dropped.
+
+## Changing an image
+
+A new version can also be made from the last one, rather than built: [image/change.sh](../image/change.sh) copies a sealed image, starts the copy on the build VM for the changes, then seals it again. It's for changes made in Windows, such as an application installed by hand. A change to what the build does, in its scripts or driver pack, takes a new build.
+
+```
+image/change.sh <N> [<from>]                                                         PC, WSL
+ 1 vm-dl-san-1   golden-v<N>.vhdx: a copy of golden-v<from>, the newest sealed one unless given, that can be written,
+                 on target "build" (image/san/change-disk.ps1)
+ 2 vm-dl-dc-1    dl-build-1's boot script for windows, and its reservation (image/dc/build-script.ps1)
+ 3 dl-build-1    PXE ─▶ snponly.efi ─▶ build.ipxe, windows: sanboot golden-v<N> ─▶ the clients' first boot, whose
+                 WinPE finds the build VM's NIC in the image already ─▶ Windows sets itself up, with a random name
+then the changes, as the image's admin: ssh admin@<the build VM's address>, with the servers' keys; RDP, with
+IMAGE_PASSWORD; or its console. Restarts are fine.
+image/change.sh <N> --seal
+ 4 vm-dl-san-1   golden-v<N> isn't sealed, and the build VM runs it
+ 5 dl-build-1    over SSH (image/windows/reseal.ps1): what a build leaves in C:\Windows\Setup\build, sysprep.xml with
+                 the image's password, generalize.ps1 and the clients' first boot; generalize.ps1 at the next startup;
+                 restart ─▶ sysprep, the first boot's boot entry again, power off
+ 6 vm-dl-san-1   the seal, as for a build (image/san/seal.ps1): generalised, the first boot there, read-only
+ 7 vm-dl-dc-1    dl-build-1's boot script removed
+```
+
+- **What a change keeps:** everything in the image, the NIC families' reflected drivers and the build NIC's interface among them, and its first-boot WinPE. The first-boot step itself, `firstboot.ps1`, is the repo's: the image takes the current one.
+- **A change goes on until it's sealed.** If the build VM goes off before `--seal`, `image/change.sh <N>` starts it on the same copy again, with the changes made so far. To drop a change, `image/remove.sh <N>` once the build VM is off.
+- **Clients don't see it** until `clients/update-clients.sh <N>` moves them to it ([clients](clients.md#updating-clients)). The image it was copied from stays as it is, for the clients still on it.
+- **Each change generalises the image once more,** and each leaves something behind: the logs and profile of the change's own session, for one. A new build from time to time starts clean.
+
+From this repo in WSL, with `IMAGE_PASSWORD` in `.env`:
+```sh
+. ~/.config/proxmox/diskless.env
+image/change.sh 6                # golden-v6, from the newest sealed image, running on the build VM: about 8 minutes
+ssh admin@10.31.1.250            # the changes, as admin; or RDP, or its console
+image/change.sh 6 --seal         # about 5 minutes; then clients/update-clients.sh 6
+```
+`golden-v6`'s change was [image/windows/iscsi-timeouts.ps1](../image/windows/iscsi-timeouts.ps1), run through the same SSH connection the scripts use: 13 minutes in all.
 
 ## What each piece is for
 

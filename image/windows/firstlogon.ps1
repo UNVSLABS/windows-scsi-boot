@@ -1,6 +1,7 @@
 # First-logon provisioning of the golden image (docs/image.md), run once by autounattend.xml from C:\Windows\Setup\build,
-# where WinPE copied it. Installs the QEMU guest agent, OpenSSH, updates if there's a file `updates` here, and RDP. Then it
-# sets generalize.ps1 to run at the next startup and restarts. The drivers are already in: setup added the driver pack.
+# where WinPE copied it. Installs the QEMU guest agent, OpenSSH, updates if there's a file `updates` here, and RDP, and
+# sets the iSCSI timeout. Then it sets generalize.ps1 to run at the next startup and restarts. The drivers are already
+# in: setup added the driver pack.
 # Log: C:\Windows\Temp\firstlogon.log
 $ErrorActionPreference = 'Stop'
 Start-Transcript C:\Windows\Temp\firstlogon.log
@@ -67,6 +68,9 @@ New-NetFirewallRule -Name allow-ping -DisplayName 'Ping' -Protocol ICMPv4 -IcmpT
 # Clients never sleep or hibernate: the disk is on the network, and fast startup is a hibernation
 powercfg /change standby-timeout-ac 0
 powercfg /hibernate off
+
+# Clients wait for their disk while the storage server restarts, rather than going down
+& "$PSScriptRoot\iscsi-timeouts.ps1"
 
 # Generalise after a restart, which lets updates finish first: generalize.ps1 runs as SYSTEM at the next startup
 $action = New-ScheduledTaskAction -Execute powershell.exe -Argument "-NoProfile -ExecutionPolicy Bypass -File $PSScriptRoot\generalize.ps1"

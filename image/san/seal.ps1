@@ -38,8 +38,8 @@ try {
 } finally { Dismount-DiskImage $path | Out-Null }
 
 Step 'read-only'
-# The iSCSI target reads a parent as SYSTEM. Administrators own the file, so they can still change its ACL, and delete
-# it through the folder's.
+# The iSCSI target reads a parent as SYSTEM. Admins can still clear the attribute and delete the file through the
+# folder's ACL (image/san/remove-image.ps1).
 Set-ItemProperty $path IsReadOnly $true
 icacls $path /inheritance:r /grant:r '*S-1-5-18:R' '*S-1-5-32-544:R' | Out-Null
 icacls $path

@@ -1,6 +1,7 @@
 # Generalise the golden image with sysprep, add the clients' first boot (firstboot-entry.ps1), then power off
-# (docs/image.md). Run once as SYSTEM at the startup after firstlogon.ps1, from C:\Windows\Setup\build. image/build.sh
-# waits for the build VM to stop. If sysprep fails, the VM stays on for a look. Log: C:\Windows\Temp\generalize.log
+# (docs/image.md). Run once as SYSTEM at the startup after firstlogon.ps1, or after reseal.ps1 when an image is changed,
+# from C:\Windows\Setup\build. image/build.sh and change.sh wait for the build VM to stop. If sysprep fails, the VM stays
+# on for a look. Log: C:\Windows\Temp\generalize.log
 $ErrorActionPreference = 'Stop'
 Start-Transcript C:\Windows\Temp\generalize.log
 Unregister-ScheduledTask -TaskName generalize -Confirm:$false
@@ -34,6 +35,7 @@ for ($try = 1; $try -le 3; $try++) {
     # copies, and the build's other files, go.
     Set-Location C:\
     Remove-Item $PSScriptRoot -Recurse -Force
+    Remove-Item C:\Windows\Temp\diskless -Recurse -Force -ErrorAction SilentlyContinue # a change's copy of the repo
     Stop-Transcript
     Stop-Computer -Force
     exit 0

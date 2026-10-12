@@ -4,7 +4,7 @@
 # C:\Windows\Temp\diskless, which the next run replaces: so one run at a time per server, and one of those scripts at a
 # time. A script that restarts Windows
 # prints "restarting: <why>" and its boot time (servers/common.ps1), and converge runs it again once Windows is back. A
-# password goes along in $SECRET, as servers/secret.txt, which the script deletes once read.
+# password or other secret goes along in $SECRET, as servers/secret.txt, which the script deletes once read.
 export MSYS_NO_PATHCONV=1 # Git Bash would rewrite the Windows paths below
 
 setting() { sed -nE "s/^ *$1 *= *'([^']*)'.*/\1/p" servers/settings.psd1; } # a value from settings.psd1

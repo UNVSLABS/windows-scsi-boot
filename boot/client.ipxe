@@ -34,7 +34,9 @@ chain memtest.efi || goto failed
 shell
 goto menu
 
+# Back to the menu after a while, whose default boots Windows: so a client that starts while the storage server is
+# away, or that restarts as it goes away, keeps trying its disk until it's back
 :failed
-echo Booting ${choice} failed. Press a key for the menu.
-prompt
+echo Booting ${choice} failed.
+prompt --timeout 30000 Press a key for the menu, or wait 30 seconds to try again || goto menu
 goto menu

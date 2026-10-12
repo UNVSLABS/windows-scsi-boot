@@ -5,13 +5,24 @@ $s = Import-PowerShellDataFile "$PSScriptRoot\settings.psd1"
 
 function Step($text) { Write-Output "== $text" }
 
-# The password setup.sh sends along in servers\secret.txt, which is deleted once read
-function Read-Secret {
+# The password or other secret that remote.sh sends along in servers\secret.txt, which is deleted once read: its first
+# line, or with -All its lines
+function Read-Secret([switch]$All) {
   $file = "$PSScriptRoot\secret.txt"
   if (-not (Test-Path $file)) { return $null }
-  $secret = (Get-Content $file -TotalCount 1).Trim()
+  $secret = if ($All) { @(Get-Content $file | ForEach-Object Trim | Where-Object { $_ }) }
+  else { (Get-Content $file -TotalCount 1).Trim() }
   Remove-Item $file -Force
   $secret
+}
+
+# A file from the repo with its @NAME@ values filled in. Windows' cmd wants CRLF and no byte-order mark; iPXE wants LF.
+function Expand-Template($from, $to, $values, [switch]$Cmd) {
+  $text = Get-Content $from -Raw
+  foreach ($name in $values.Keys) { $text = $text.Replace("@$name@", $values[$name]) }
+  if ($text -match '@[A-Z_]+@') { throw "$from`: no value for $($Matches[0])" }
+  if ($Cmd) { $text = $text -replace '\r?\n', "`r`n" }
+  [IO.File]::WriteAllText($to, $text, [Text.UTF8Encoding]::new($false))
 }
 
 # Restart Windows and end the script. setup.sh waits for the restart, then runs the script again: each one skips what's
@@ -72,6 +83,32 @@ function Wait-TargetIdle($Target) {
   while ((Get-IscsiServerTarget -TargetName $Target -ErrorAction SilentlyContinue).Status -eq 'Connected') {
     if ((Get-Date) -gt $deadline) { throw "target $Target still has a session after 5 minutes: is its client running?" }
     Start-Sleep 15
+  }
+}
+
+# On the storage server: a golden image version, the one given or the newest sealed one. Fails unless it's sealed.
+function Resolve-GoldenImage([int]$Version) {
+  $images = "$($s.SanDataDrive):\iSCSI\images"
+  if (-not $Version) {
+    $Version = Get-ChildItem $images -Filter 'golden-v*.vhdx' | Where-Object IsReadOnly |
+      ForEach-Object { [int]($_.BaseName -replace '^golden-v') } | Sort-Object | Select-Object -Last 1
+    if (-not $Version) { throw "no sealed golden image in $images" }
+  }
+  $path = "$images\golden-v$Version.vhdx"
+  if (-not (Test-Path $path) -or -not (Get-Item $path).IsReadOnly) { throw "golden-v$Version isn't built and sealed" }
+  $Version
+}
+
+# On the storage server: target "build", which accepts only the build VM's initiator, with no disks on it yet, for
+# image/build.sh and image/change.sh, which run this while the build VM is off
+function Set-BuildTarget($InitiatorIqn) {
+  $target = 'build'
+  Wait-TargetIdle $target
+  if (-not (Get-IscsiServerTarget -TargetName $target -ErrorAction SilentlyContinue)) {
+    New-IscsiServerTarget -TargetName $target -InitiatorIds "IQN:$InitiatorIqn" | Out-Null
+  } else { Set-IscsiServerTarget -TargetName $target -InitiatorIds "IQN:$InitiatorIqn" }
+  foreach ($lun in (Get-IscsiServerTarget -TargetName $target).LunMappings) {
+    Remove-IscsiVirtualDiskTargetMapping -TargetName $target -Path $lun.Path
   }
 }
 

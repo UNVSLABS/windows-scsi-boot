@@ -42,15 +42,6 @@ function Get-Pinned($url, $sha256) {
   $file
 }
 
-# A file from the repo with its @NAME@ values filled in. Windows' cmd wants CRLF and no byte-order mark; iPXE wants LF.
-function Expand-Template($from, $to, $values, [switch]$Cmd) {
-  $text = Get-Content $from -Raw
-  foreach ($name in $values.Keys) { $text = $text.Replace("@$name@", $values[$name]) }
-  if ($text -match '@[A-Z_]+@') { throw "$from`: no value for $($Matches[0])" }
-  if ($Cmd) { $text = $text -replace '\r?\n', "`r`n" }
-  [IO.File]::WriteAllText($to, $text, [Text.UTF8Encoding]::new($false))
-}
-
 # A password for the share's account, which WinPE gets in plain text: random, and new for each build
 function New-Password {
   $chars = [char[]]'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789'
@@ -211,7 +202,7 @@ Expand-Template "$root\image\windows\autounattend.xml" "$build\autounattend.xml"
 # What WinPE copies into the new Windows for its first logon
 Expand-Template "$root\image\windows\sysprep.xml" "$build\windows\sysprep.xml" $values
 Copy-Item "$root\image\windows\firstlogon.ps1", "$root\image\windows\generalize.ps1", "$root\image\windows\firstboot-entry.ps1",
-  "$share\tools\qemu-ga-x86_64.msi" "$build\windows"
+  "$root\image\windows\iscsi-timeouts.ps1", "$share\tools\qemu-ga-x86_64.msi" "$build\windows"
 Copy-Item "$env:ProgramData\ssh\administrators_authorized_keys" "$build\windows\authorized_keys" # the servers' keys
 # The clients' first boot, which generalize.ps1 adds once sysprep is done (firstboot-entry.ps1)
 New-Item -ItemType Directory "$build\windows\firstboot" | Out-Null
@@ -223,16 +214,9 @@ $id = $Mac.ToLower() -replace ':', '-' # as iPXE's ${net0/mac:hexhyp}, and the D
 $job = "$($s.BootFiles)\jobs\$id.cmd"
 New-Item -ItemType Directory -Force (Split-Path $job) | Out-Null
 Expand-Template "$root\image\winpe\build.cmd" $job $values -Cmd
-# The build VM's own script, for setup: the build's disks, then the build's boot (boot/build.ipxe)
+# The build VM's own script, for setup: the build's disks, then the build's boot (boot/build.ipxe); and its reservation
 & "$PSScriptRoot\build-script.ps1" $Mac $InitiatorIqn $TargetIqn setup -SecondTargetIqn $SecondTargetIqn
-
-# A reservation, so the build VM can be found while it builds. Fixed MACs are 02:00 and then the address (lab/main.tf).
-$scope = $s.Network.Split('/')[0]
 $address = (($Mac -split ':')[2..5] | ForEach-Object { [Convert]::ToInt32($_, 16) }) -join '.'
-if (-not (Get-DhcpServerv4Reservation -ScopeId $scope | Where-Object ClientId -eq $id)) {
-  Add-DhcpServerv4Reservation -ScopeId $scope -IPAddress $address -ClientId $id -Name $s.BuildVm `
-    -Description 'Builds golden images (image/build.sh)'
-}
 
 Step 'check'
 # What the build VM fetches, as iPXE fetches it: anonymously

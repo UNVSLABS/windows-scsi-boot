@@ -17,7 +17,10 @@ Remove-Item "$($s.BootFiles)\clients\$id.ipxe", "$($s.BootFiles)\jobs\$id.cmd" -
 $scope = $s.Network.Split('/')[0]
 $reservation = Get-DhcpServerv4Reservation -ScopeId $scope | Where-Object ClientId -eq $id
 if ($reservation) { Remove-DhcpServerv4Reservation -ScopeId $scope -ClientId $id }
-"$Name`: no DHCP reservation"
+# And its leases: a removed reservation leaves its lease, which Get-DhcpServerv4Reservation -IPAddress still returns
+Get-DhcpServerv4Lease -ScopeId $scope | Where-Object ClientId -eq $id |
+  ForEach-Object { Remove-DhcpServerv4Lease -IPAddress $_.IPAddress }
+"$Name`: no DHCP reservation or lease"
 
 $a = Get-DnsServerResourceRecord -ZoneName $s.DomainName -Name $Name -RRType A -ErrorAction SilentlyContinue
 foreach ($record in $a) {

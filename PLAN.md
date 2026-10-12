@@ -22,7 +22,7 @@ Not covered: CHAP authentication, backups, Windows activation, and user data on 
 | 1 | Domain controller with DHCP and boot files; storage server with iSCSI Target | **Done 2026-10-10** ([docs/servers.md](docs/servers.md#verified)) |
 | 2 | Golden image, and the NIC-independence test | **Done 2026-10-11:** `golden-v4` is built on iSCSI by the scripts, and boots clients with the build's two NIC families, Intel's (e1000e) and vmxnet3, a stand-in for a second physical family, at any PCI slot ([docs/image.md](docs/image.md#nic-independence)) |
 | 3 | Clients on differencing disks, joined to the domain | **Done 2026-10-12:** three clients boot together from `golden-v5`, each with its own name and SID, joined to the domain, and a domain user logs on. A client needs only to be switched on: the golden image's first boot makes its NIC a boot NIC by itself ([docs/clients.md](docs/clients.md#results)) |
-| 4 | Image updates and failure behaviour | Not started |
+| 4 | Image updates and failure behaviour | **Done 2026-10-12:** `golden-v6`, made from `golden-v5` by changing it on the build VM, and the three clients moved to it by `update-clients.sh`, keeping their computer accounts. Clients ride out a storage server restart: since `golden-v6` they wait up to 10 minutes for their disk, where Windows' default of 60 seconds took them down. They don't need the domain controller while they run ([docs/clients.md](docs/clients.md#when-a-server-restarts)) |
 
 Details are in [Phases](#phases).
 
@@ -131,8 +131,8 @@ Its NIC model must be one the golden image's build had ([NIC independence](#nic-
 
 | Storage (measured in phase 3) | Size |
 |---|---|
-| Golden image, per version | 12.2 GB (`golden-v5`, with 0.5 GB of WinPE for the first boot). Current and previous version kept |
-| Child, after first boot | 1.2 GB; 1.3 GB after the second; about 0.4 GB more for each user's first logon |
+| Golden image, per version | 12.2 GB (`golden-v5` and `golden-v6`, with 0.5 GB of WinPE for the first boot). The clients' version, and the one before to roll back to, until deleted by hand |
+| Child, after first boot | 1.1–1.2 GB; 1.3 GB after the second; about 0.4 GB more for each user's first logon |
 | Child, grows by | the client's writes until the next image update, plus its pagefile as it's written, up to its fixed 2 GB (Group Policy) |
 
 Microsoft's own example: one 40 GB base image plus 2 GB per client is 552 GB for 256 machines, instead of about 10 TB of full copies.
@@ -155,18 +155,20 @@ All driven by `clients/clients.csv` (name, MAC, address). The scripts run from t
    - Windows Boot Manager on the disk starts the image's first-boot WinPE. It runs `dism /Add-NetAdapter` for the client's NIC on the disk, unless the image has that NIC already: the build NIC's model at its PCI slot. Then it sets the boot manager's default back to Windows, and restarts ([NIC independence](#nic-independence)).
    - Windows finishes setup and joins the domain, with no prompts.
 
-**`Update-Clients <version>`** (phase 4): run while the clients are off.
-- For each client: deletes its child disk and repeats step 2 against the new golden image. `/reuse` keeps the same computer account. The client's next start is a first boot again, so the update needs nothing per machine.
-- It refuses any client whose target still has an active session.
-- An old golden image is deleted once no child uses it.
+**`clients/update-clients.sh <version> [<name>...]`** ([docs/clients.md](docs/clients.md#updating-clients)): every client in `clients.csv` that has a disk, or those named, while they're off.
+1. **On the storage server:** takes each client's disk off its target, unless the client is on that version already or running: a session on its target. A running client is left as it is, and reported.
+2. **On the domain controller:** for each of those, its reservation, and a new offline domain join (`/reuse`), which keeps its computer account and resets the account's password. So never for a running client, which would lose its trust with the domain.
+3. **On the storage server:** each one's new disk on the golden image, as in step 2 above, on the same target.
+
+The client's next start is a first boot again, so the update needs nothing per machine. Rolling back is the same, with the older version. Golden images that no disk uses any more are listed, not deleted: they're kept to roll back to, until deleted with `image/remove.sh <version>`.
 
 **`clients/remove-client.sh <name>`:** reverses `new-client.sh`. It refuses while the client is running.
 
-**Changing the image:**
-1. Copy the current golden image to `golden-v(N+1).vhdx`.
-2. Assign it to the build target and boot a maintenance VM from it.
-3. Make the changes, run sysprep, add the clients' first boot again (`image/windows/firstboot-entry.ps1`, as the build does), and set it read-only.
-4. Run `Update-Clients.ps1`.
+**Changing the image** (`image/change.sh`, [docs/image.md](docs/image.md#changing-an-image)), or a new build with `image/build.sh`:
+1. Copy the newest golden image to `golden-v(N+1).vhdx`, assign it to the build target, and boot the build VM from it.
+2. Make the changes, in its Windows.
+3. `image/change.sh <N+1> --seal`: sysprep, the clients' first boot again (`image/windows/firstboot-entry.ps1`, as the build does), and read-only.
+4. `clients/update-clients.sh <N+1>`.
 
 The domain-join data holds the computer account's machine password. It goes from the domain controller to the storage server through the workstation's memory, is written only into the client's own disk, and is deleted there once Windows setup is done. It's never stored in the repo.
 
@@ -235,7 +237,8 @@ So:
      - each has its own name and SID, is joined to the domain and logs in as a domain user;
      - child disk sizes are measured against the estimates.
 4. **Lifecycle**
-   - `Update-Clients.ps1` from v1 to v2.
+   - `image/change.sh`: a new golden image version from the last one, changed on the build VM.
+   - `update-clients.sh` from one version to the next.
    - What clients do when the storage server restarts. Microsoft warns that they hang.
    - What clients do when the domain controller restarts. They should keep running: the boot NIC's address comes from the iBFT.
    - *Done when:* an update is tested end to end, and both restart behaviours are written down with how to recover.
@@ -260,7 +263,12 @@ So:
 | Second NIC family | vmxnet3 as a stand-in for a second physical family, on the build VM only while setup runs, through a second storage server address. Optional: a build can have one family | Windows reads two NICs from the iBFT. iPXE puts a NIC there only for a disk it reaches, so the second NIC has a target of its own. Present at Windows' first boot, it made setup restart. vmxnet3 is a NIC a VM can have whose driver setup reflects; a physical family needs its NIC in the build |
 | A client's NIC | Its interface made on the client's first boot (`dism /Add-NetAdapter`), by a WinPE that the golden image carries and Windows Boot Manager starts first | Windows keys a boot NIC's TCP/IP binding to the NIC's PCI location, which differs between machines. From the disk, the first boot needs nothing from outside: no boot script to switch between boots, for a VM or a physical machine, and an image update needs nothing per machine |
 | Client scripts | Run from the workstation, one SSH connection per server step, as for the servers | An SSH logon with a key carries no credentials, so a script on the storage server can't act on the domain controller |
-| Server updates | Downloaded automatically, installed and restarted by an admin | Clients hang while the storage server restarts, so restarts must be planned |
+| Changing an image | A copy of the newest golden image, booted on the build VM, changed, and sealed again as a new version (`image/change.sh`); or a new build | Changes made by hand, such as an application, need no build. A change to the build's own scripts takes a build |
+| An update's order | The storage server takes the disks of clients that are off; only then does the domain controller make their new domain joins | A new join resets the computer account's password, which a running client still uses |
+| Old golden images | Kept until deleted by hand (`image/remove.sh`), which refuses while any disk is on one | They're what clients roll back to |
+| A failed disk boot | iPXE goes back to its menu after 30 seconds, whose default boots Windows | A client that starts, or goes down and restarts, while the storage server is away gets its disk once it's back, with no one there |
+| Server updates | Downloaded automatically, installed and restarted by an admin | Clients pause while the storage server restarts, and go down if it's away for longer than they wait, so restarts must be planned |
+| How long clients wait for their disk | 10 minutes: the iSCSI initiator's `MaxRequestHoldTime`, in the golden image, rather than Windows' 60 seconds | A storage server restart can take longer than a minute, and a client that stops waiting goes down ([docs/clients.md](docs/clients.md#the-storage-server)) |
 
 ## Risks
 
@@ -270,12 +278,13 @@ So:
 | Windows 11 booting from iSCSI isn't officially supported; Microsoft's docs cover Windows Server | No vendor support | Widely used with iPXE. Setup onto iSCSI is checked first in phase 2 |
 | WinPE doesn't connect the iSCSI disk in the iBFT (**happened**, phase 2) | Setup can't install onto iSCSI, so there's no golden image | Solved: Windows routed iSCSI through the iBFT's gateway, which iPXE now leaves out ([docs/image.md](docs/image.md#booting-from-iscsi)) |
 | Windows 11 setup may refuse to install with Secure Boot off | The golden image build stops | Setup's hardware-check bypass in WinPE, or Secure Boot on with the signed iPXE shim |
-| The storage server goes away | Every running client hangs | Behaviour and recovery written down in phase 4 |
-| A write to a golden image | Every child built on it breaks | Read-only attribute and ACL. Versioned file names. Only `Update-Clients.ps1` touches parents |
+| The storage server goes away (**tested**, phase 4) | Running clients pause; past 10 minutes, they go down | Since `golden-v6` they wait 10 minutes, so a restart is a pause. After longer, iPXE retries their disks, and they come back by themselves once it's back ([docs/clients.md](docs/clients.md#when-a-server-restarts)). Restarting only the iSCSI Target service with clients running doesn't work: it never stops |
+| A write to a golden image | Every child built on it breaks | Read-only attribute and ACL. Versioned file names: a change works on a copy, under the next version |
 
 ## Open questions
 
-1. **Physical NIC models to support.** Each needs its driver in the driver pack and the NIC in the build ([NIC independence](#nic-independence)): passed through to the build VM, if the host can, or a physical build machine.
+1. **Windows' automatic maintenance on clients** (found in phase 4): its defrag and the like grew a child disk from 1.1 to 7 GB in its first 20 minutes idle ([docs/clients.md](docs/clients.md#an-update-golden-v5-to-golden-v6)). Turning the defrag task off on clients, and running the maintenance in the build before sysprep, should keep children small; not yet tried.
+2. **Physical NIC models to support.** Each needs its driver in the driver pack and the NIC in the build ([NIC independence](#nic-independence)): passed through to the build VM, if the host can, or a physical build machine.
 
 ## Repo layout
 
@@ -290,10 +299,11 @@ servers/san/     join the domain; iSCSI Target Server and the data disk
 boot/            boot.ipxe; the menus for non-clients, clients and the build; configure.ps1 fetches snponly.efi,
                  wimboot, Memtest86+
 .env.example     the passwords the scripts read from .env (gitignored)
-image/           build.sh and nic-test.sh (from the PC); drivers.psd1, the NIC driver pack; dc/ and san/, their
-                 parts on the servers; winpe/, WinPE's startup and jobs; windows/, the answer files and scripts
-clients/         clients.csv; new-client.sh, remove-client.sh and check.sh (from the PC); dc/ and san/, their parts
-                 on the servers, and the clients' Group Policy
+image/           build.sh, change.sh, remove.sh and nic-test.sh (from the PC); drivers.psd1, the NIC driver pack; dc/
+                 and san/, their parts on the servers; winpe/, WinPE's startup and jobs; windows/, the answer files
+                 and scripts
+clients/         clients.csv; new-client.sh, update-clients.sh, remove-client.sh and check.sh (from the PC); dc/ and
+                 san/, their parts on the servers, and the clients' Group Policy
 ```
 
 ## Sources
