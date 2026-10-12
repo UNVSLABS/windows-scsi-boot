@@ -1,6 +1,6 @@
-# Generalise the golden image with sysprep, then power off (docs/image.md). Run once as SYSTEM at the startup after
-# firstlogon.ps1, from C:\Windows\Setup\build. image/build.sh waits for the build VM to stop. If sysprep fails, the VM
-# stays on for a look. Log: C:\Windows\Temp\generalize.log
+# Generalise the golden image with sysprep, add the clients' first boot (firstboot-entry.ps1), then power off
+# (docs/image.md). Run once as SYSTEM at the startup after firstlogon.ps1, from C:\Windows\Setup\build. image/build.sh
+# waits for the build VM to stop. If sysprep fails, the VM stays on for a look. Log: C:\Windows\Temp\generalize.log
 $ErrorActionPreference = 'Stop'
 Start-Transcript C:\Windows\Temp\generalize.log
 Unregister-ScheduledTask -TaskName generalize -Confirm:$false
@@ -27,6 +27,9 @@ for ($try = 1; $try -le 3; $try++) {
   $state = (Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Setup\State').ImageState
   "sysprep try $try exited $($p.ExitCode), image state $state"
   if ($state -eq 'IMAGE_STATE_GENERALIZE_RESEAL_TO_OOBE') {
+    # Then the clients' first boot: WinPE, which makes a client's NIC a boot NIC, as the boot manager's default
+    # (docs/clients.md). If this fails, the VM stays on.
+    & "$PSScriptRoot\firstboot-entry.ps1" -From "$PSScriptRoot\firstboot"
     # Sysprep has its own copy of the answers, and Windows blanks its passwords once a client uses them. This folder's
     # copies, and the build's other files, go.
     Set-Location C:\

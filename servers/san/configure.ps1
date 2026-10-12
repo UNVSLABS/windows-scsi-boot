@@ -13,9 +13,22 @@ Set-UpdatePolicy
 Step 'iSCSI Target Server'
 Install-Feature FS-iSCSITarget-Server
 # The service can start before the static address is usable, fail to bind to it (event 10, error 10049), and then
-# listen nowhere. It can't be made to start later: Windows refuses delayed start for it (error 87), as it's in a load
-# order group. So it's restarted here if it isn't listening.
-if (-not (Get-NetTCPConnection -LocalPort 3260 -State Listen -ErrorAction SilentlyContinue)) { Restart-Service WinTarget }
+# listen nowhere, though it's running. It can't be made to start later: Windows refuses delayed start for it (error 87),
+# as it's in a load order group. So a task restarts it after each startup until it listens, and so does this.
+$listen = @"
+for (`$i = 0; `$i -lt 10; `$i++) {
+  if (Get-NetTCPConnection -LocalAddress $($s.SanAddress) -LocalPort 3260 -State Listen -ErrorAction SilentlyContinue) { break }
+  Restart-Service WinTarget
+  Start-Sleep 30
+}
+"@
+$encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($listen))
+$trigger = New-ScheduledTaskTrigger -AtStartup
+$trigger.Delay = 'PT1M'
+Register-ScheduledTask -TaskName 'iSCSI target listening' -Force -User SYSTEM -RunLevel Highest -Trigger $trigger `
+  -Action (New-ScheduledTaskAction -Execute powershell.exe -Argument "-NoProfile -NonInteractive -EncodedCommand $encoded") `
+  -Description 'Restarts the iSCSI Target Server if it failed to bind at startup (windows-scsi-boot servers/san/configure.ps1)' | Out-Null
+& ([scriptblock]::Create($listen))
 
 Step "data disk as $($s.SanDataDrive):"
 $label = 'iSCSI'
@@ -51,6 +64,7 @@ Step 'check'
 Get-WindowsFeature FS-iSCSITarget-Server | ForEach-Object { "$($_.Name): $($_.InstallState)" }
 Get-Volume -FileSystemLabel $label | ForEach-Object { "$($_.DriveLetter): $($_.FileSystem) $([math]::Round($_.Size / 1GB)) GB" }
 Get-Service WinTarget | ForEach-Object { "service $($_.Name): $($_.Status), $($_.StartType)" }
+Get-ScheduledTask 'iSCSI target listening' | ForEach-Object { "task '$($_.TaskName)': $($_.State), at startup" }
 Get-NetTCPConnection -LocalPort 3260 -State Listen | ForEach-Object { "listening on $($_.LocalAddress):3260" }
 (Get-IscsiTargetServerSetting).Portals | Where-Object { $_.IPEndpoint.AddressFamily -eq 'InterNetwork' } |
   ForEach-Object { "portal $($_.IPEndpoint): $(if ($_.Enabled) { 'enabled' } else { 'disabled' })" }

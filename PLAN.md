@@ -21,7 +21,7 @@ Not covered: CHAP authentication, backups, Windows activation, and user data on 
 | 0 | Environment setup, repo, Terraform for the VMs | **Done 2026-10-10** ([docs/environment.md](docs/environment.md#verified)) |
 | 1 | Domain controller with DHCP and boot files; storage server with iSCSI Target | **Done 2026-10-10** ([docs/servers.md](docs/servers.md#verified)) |
 | 2 | Golden image, and the NIC-independence test | **Done 2026-10-11:** `golden-v4` is built on iSCSI by the scripts, and boots clients with the build's two NIC families, Intel's (e1000e) and vmxnet3, a stand-in for a second physical family, at any PCI slot ([docs/image.md](docs/image.md#nic-independence)) |
-| 3 | Clients on differencing disks, joined to the domain | Not started |
+| 3 | Clients on differencing disks, joined to the domain | **Done 2026-10-12:** three clients boot together from `golden-v5`, each with its own name and SID, joined to the domain, and a domain user logs on. A client needs only to be switched on: the golden image's first boot makes its NIC a boot NIC by itself ([docs/clients.md](docs/clients.md#results)) |
 | 4 | Image updates and failure behaviour | Not started |
 
 Details are in [Phases](#phases).
@@ -40,11 +40,13 @@ Client (VM or physical)                              vm-dl-dc-1: AD DS, DNS, DHC
  6 Windows Boot Manager loads from the LUN;             LUN = clients\<name>.vhdx (differencing disk)
    Windows reads the iBFT, reconnects to the same         └─ parent: images\golden-vN.vhdx (read-only)
    target, and the disk never drops
+   (a new disk's first boot: WinPE from the disk first, which makes this machine's NIC a boot NIC, then restarts)
 ```
 
 - **iPXE is the stock `snponly.efi`.** It drives the NIC through the firmware's own UEFI driver, so any NIC that can network-boot works before Windows starts. Nothing has to be compiled.
 - **DHCP policies on the domain controller choose what to hand out:** a UEFI x64 PXE request gets `snponly.efi` over TFTP, and a request from iPXE gets `boot.ipxe` over HTTP.
 - **Each client's boot script is a static file** (`boot/<mac>.ipxe`), written by `New-Client.ps1`. No custom web service is needed.
+- **A client's first boot needs nothing from outside.** The golden image carries a WinPE and a boot entry that starts it, as Windows Boot Manager's default. On a new disk's first boot, that WinPE makes the machine's NIC a boot NIC of the disk's Windows, sets the default back to Windows, and restarts ([NIC independence](#nic-independence)). So a client only has to be switched on, and an image update needs nothing per machine.
 - **The menu:**
   - a known client gets Windows from its own disk; WinPE with its disk attached (`sanhook`), for recovery; and Memtest86+;
   - an unknown MAC gets WinPE and Memtest86+ only;
@@ -82,7 +84,7 @@ Client (VM or physical)                              vm-dl-dc-1: AD DS, DNS, DHC
 |---|---|---|---|
 | vm-dl-dc-1 | Full clone of 9021 | 2 vCPU, 4 GiB, 64 GB | 10.31.0.10, MAC `02:00:0A:1F:00:0A` |
 | vm-dl-san-1 | Full clone of 9021 | 4 vCPU, 8 GiB, 64 GB OS disk + 200 GB thin data disk | 10.31.0.20, MAC `02:00:0A:1F:00:14`; and 10.31.0.21, for the build's second NIC |
-| dl-ws-1 to dl-ws-3 | Empty: UEFI without Secure Boot keys, TPM 2.0, a VirtIO RNG, no disk, boots from the network. NICs virtio, e1000e and vmxnet3 | 2 vCPU, 4 GiB each | DHCP reservation per fixed MAC |
+| dl-ws-1 to dl-ws-3 | Empty: UEFI without Secure Boot keys, TPM 2.0, a VirtIO RNG, no disk, boots from the network. NICs vmxnet3, e1000e and vmxnet3: models the golden image boots | 2 vCPU, 4 GiB each | DHCP reservation per fixed MAC |
 | dl-build-1 | Empty, like the clients, with an Intel e1000e NIC, and while setup runs a vmxnet3 NIC, standing in for a second physical NIC family. Builds golden images | 4 vCPU, 4 GiB | DHCP reservation, 10.31.1.250 |
 
 - **Fixed MACs** are `02:00` followed by the IPv4 address in hex.
@@ -123,48 +125,50 @@ Its NIC model must be one the golden image's build had ([NIC independence](#nic-
 - **Child per client** (`clients\<name>.vhdx`):
   - Made with `New-IscsiVirtualDisk -Path ... -ParentPath ...`.
   - One iSCSI target per client, which accepts only that client's IQN.
-  - The client's first boot finishes Windows setup into the child, on its own hardware.
+  - The client's first boot makes its NIC a boot NIC, then finishes Windows setup into the child, on its own hardware.
 - **Children persist until the next image update.** An update recreates every child from the new golden image, so anything stored on a client is wiped then.
 - **Windows Update is off on clients,** through Group Policy. Updates arrive in new golden images, which keeps children small.
 
-| Storage (estimates, to be measured in phase 3) | Size |
+| Storage (measured in phase 3) | Size |
 |---|---|
-| Golden image, per version | about 15–20 GB. Current and previous version kept |
-| Child, after first boot | about 2 GB |
-| Child, grows by | the client's writes until the next image update, plus its pagefile. The pagefile gets a fixed size through Group Policy |
+| Golden image, per version | 12.2 GB (`golden-v5`, with 0.5 GB of WinPE for the first boot). Current and previous version kept |
+| Child, after first boot | 1.2 GB; 1.3 GB after the second; about 0.4 GB more for each user's first logon |
+| Child, grows by | the client's writes until the next image update, plus its pagefile as it's written, up to its fixed 2 GB (Group Policy) |
 
 Microsoft's own example: one 40 GB base image plus 2 GB per client is 552 GB for 256 machines, instead of about 10 TB of full copies.
 
 ## Client lifecycle
 
-All driven by `clients/clients.csv` (name, MAC, IP). The scripts run on vm-dl-san-1 as a domain admin, and use PowerShell remoting for the domain controller's part.
+All driven by `clients/clients.csv` (name, MAC, address). The scripts run from the workstation, like the server setup: each step is one SSH connection to one server. A script on the storage server couldn't do the domain controller's part as planned at first, through PowerShell remoting: an SSH logon with a key carries no credentials to pass on.
 
-**`New-Client.ps1 <name>`:**
+**`clients/new-client.sh <name>`** ([docs/clients.md](docs/clients.md)):
 1. **On the domain controller:**
-   - adds a DHCP reservation for the MAC;
-   - pre-creates the computer account and an offline domain-join file (`djoin /provision /reuse`);
-   - writes `boot/<mac>.ipxe`.
+   - the clients' OU and Group Policy, if they're missing;
+   - a DHCP reservation for the MAC;
+   - the computer account in that OU, and an offline domain join for it (`djoin /provision /reuse /printblob`).
 2. **On the storage server:**
-   - creates `clients\<name>.vhdx` with the current golden image as parent;
-   - mounts it, writes an answer file into it with the computer name and the domain-join data, and unmounts it;
+   - creates `clients\<name>.vhdx` with the newest golden image as parent;
+   - mounts it, and writes the computer name and the domain join into the answer file that sysprep left in it, with a `SetupComplete.cmd` that deletes that file once Windows setup is done;
    - creates target `<name>` restricted to the client's IQN, and assigns the disk to it.
-3. **The client's first boot** starts WinPE, with the client's disk attached, which runs `dism /Add-NetAdapter` for the client's NIC on that disk and powers off ([NIC independence](#nic-independence)). It's skipped for the build NIC's model at the build NIC's PCI slot.
-4. **Its next boot** finishes Windows setup and joins the domain, with no prompts.
+3. **On the domain controller:** writes `boot/clients/<mac>.ipxe`.
+4. **The client's first boot,** once it's switched on, needs nothing more:
+   - Windows Boot Manager on the disk starts the image's first-boot WinPE. It runs `dism /Add-NetAdapter` for the client's NIC on the disk, unless the image has that NIC already: the build NIC's model at its PCI slot. Then it sets the boot manager's default back to Windows, and restarts ([NIC independence](#nic-independence)).
+   - Windows finishes setup and joins the domain, with no prompts.
 
-**`Update-Clients.ps1 <version>`:** run while the clients are off.
-- For each client: deletes its child disk and repeats step 2 against the new golden image. `/reuse` keeps the same computer account.
+**`Update-Clients <version>`** (phase 4): run while the clients are off.
+- For each client: deletes its child disk and repeats step 2 against the new golden image. `/reuse` keeps the same computer account. The client's next start is a first boot again, so the update needs nothing per machine.
 - It refuses any client whose target still has an active session.
 - An old golden image is deleted once no child uses it.
 
-**`Remove-Client.ps1 <name>`:** reverses `New-Client.ps1`.
+**`clients/remove-client.sh <name>`:** reverses `new-client.sh`. It refuses while the client is running.
 
 **Changing the image:**
 1. Copy the current golden image to `golden-v(N+1).vhdx`.
 2. Assign it to the build target and boot a maintenance VM from it.
-3. Make the changes, run sysprep, and set it read-only.
+3. Make the changes, run sysprep, add the clients' first boot again (`image/windows/firstboot-entry.ps1`, as the build does), and set it read-only.
 4. Run `Update-Clients.ps1`.
 
-The domain-join files hold machine passwords. They're made when needed and deleted after use, and never stored in the repo.
+The domain-join data holds the computer account's machine password. It goes from the domain controller to the storage server through the workstation's memory, is written only into the client's own disk, and is deleted there once Windows setup is done. It's never stored in the repo.
 
 ## NIC independence
 
@@ -184,7 +188,8 @@ So:
 - **The second family here is vmxnet3, a stand-in for a second family of physical NICs,** such as workstations' Realtek or newer Intel NICs that Intel's package doesn't cover. vmxnet3's driver covers only VMware's virtual adapter. A physical family needs the NIC itself in the build: passed through to the build VM, or a build on a physical workstation with the same scripts.
 - **A build can have one family only** ([docs/image.md](docs/image.md#building-for-one-nic-family)).
 - **virtio can't be one:** setup itself fails to reflect virtio's NetKVM driver. VM clients use e1000e or vmxnet3.
-- **Each client's NIC needs its interface,** except the build NIC's model at the build NIC's slot, which sysprep keeps. Proxmox VMs have no NIC serial numbers, so a VM's `net0` of the same model is the same device; physical NICs are always new devices. WinPE on the client makes the interface on its first boot ([Client lifecycle](#client-lifecycle)).
+- **Each client's NIC needs its interface,** except the build NIC's model at the build NIC's slot, which sysprep keeps. Proxmox VMs have no NIC serial numbers, so a VM's `net0` of the same model is the same device; physical NICs are always new devices.
+- **The golden image makes it itself, on each client's first boot** ([docs/clients.md](docs/clients.md#the-first-boot)). The build puts a WinPE into the image, with a boot entry for it as Windows Boot Manager's default. WinPE then runs on the client, from the client's own disk: it adds the interface for the live NIC, unless the image has that NIC already, sets the default back to Windows, and restarts.
 
 **Tested** with a new MAC each time ([results](docs/image.md#results)):
 
@@ -222,7 +227,8 @@ So:
    - Sysprep, then set the image read-only. Then the [NIC test](#nic-independence).
    - *Done when:* a golden image built by the scripts boots clients over iSCSI, and the NIC result is recorded.
 3. **Clients**
-   - `New-Client.ps1` and `Remove-Client.ps1`.
+   - `clients/new-client.sh` and `remove-client.sh`.
+   - The clients' first boot in the golden image: a WinPE that makes a client's NIC a boot NIC on its own.
    - Group Policy: Windows Update off, no hibernation or fast startup, NIC power saving off, fixed pagefile size.
    - *Done when:*
      - three clients boot together from one golden image;
@@ -252,7 +258,8 @@ So:
 | Tooling | Terraform for VMs; PowerShell over SSH for everything in Windows. No Packer | Few moving parts, and every step can be re-run |
 | Build NIC | Intel (an e1000e in the lab), not virtio | Setup makes the build's NICs boot NICs of the image, and fails to for virtio's NetKVM |
 | Second NIC family | vmxnet3 as a stand-in for a second physical family, on the build VM only while setup runs, through a second storage server address. Optional: a build can have one family | Windows reads two NICs from the iBFT. iPXE puts a NIC there only for a disk it reaches, so the second NIC has a target of its own. Present at Windows' first boot, it made setup restart. vmxnet3 is a NIC a VM can have whose driver setup reflects; a physical family needs its NIC in the build |
-| A client's NIC | Its interface made by WinPE on the client's first boot (`dism /Add-NetAdapter`) | Windows keys a boot NIC's TCP/IP binding to the NIC's PCI location, which differs between machines |
+| A client's NIC | Its interface made on the client's first boot (`dism /Add-NetAdapter`), by a WinPE that the golden image carries and Windows Boot Manager starts first | Windows keys a boot NIC's TCP/IP binding to the NIC's PCI location, which differs between machines. From the disk, the first boot needs nothing from outside: no boot script to switch between boots, for a VM or a physical machine, and an image update needs nothing per machine |
+| Client scripts | Run from the workstation, one SSH connection per server step, as for the servers | An SSH logon with a key carries no credentials, so a script on the storage server can't act on the domain controller |
 | Server updates | Downloaded automatically, installed and restarted by an admin | Clients hang while the storage server restarts, so restarts must be planned |
 
 ## Risks
@@ -285,7 +292,8 @@ boot/            boot.ipxe; the menus for non-clients, clients and the build; co
 .env.example     the passwords the scripts read from .env (gitignored)
 image/           build.sh and nic-test.sh (from the PC); drivers.psd1, the NIC driver pack; dc/ and san/, their
                  parts on the servers; winpe/, WinPE's startup and jobs; windows/, the answer files and scripts
-clients/         clients.csv, New-Client.ps1, Update-Clients.ps1, Remove-Client.ps1
+clients/         clients.csv; new-client.sh, remove-client.sh and check.sh (from the PC); dc/ and san/, their parts
+                 on the servers, and the clients' Group Policy
 ```
 
 ## Sources

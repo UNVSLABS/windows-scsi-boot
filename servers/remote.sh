@@ -1,7 +1,8 @@
 # shellcheck shell=bash disable=SC2034 # the settings here are for the scripts that source this
-# Running the repo's PowerShell scripts on the Windows servers over SSH, for setup.sh and image/*.sh, which source this
-# from the repo root. Each script runs from a fresh copy of servers/, boot/ and image/ in C:\Windows\Temp\diskless, which
-# the next run replaces: so one run at a time per server, and one image/*.sh at a time. A script that restarts Windows
+# Running the repo's PowerShell scripts on the Windows servers over SSH, for setup.sh, image/*.sh and clients/*.sh, which
+# source this from the repo root. Each script runs from a fresh copy of servers/, boot/, image/ and clients/ in
+# C:\Windows\Temp\diskless, which the next run replaces: so one run at a time per server, and one of those scripts at a
+# time. A script that restarts Windows
 # prints "restarting: <why>" and its boot time (servers/common.ps1), and converge runs it again once Windows is back. A
 # password goes along in $SECRET, as servers/secret.txt, which the script deletes once read.
 export MSYS_NO_PATHCONV=1 # Git Bash would rewrite the Windows paths below
@@ -26,9 +27,9 @@ run() { # run <user@host> <script> [argument...]: send a fresh copy of the scrip
   local host=$1 script=${2//\//\\} stage status=0
   shift 2
   stage=$(mktemp -d)
-  cp -r servers boot image "$stage/"
+  cp -r servers boot image clients "$stage/"
   [[ -z ${SECRET:-} ]] || (umask 077; printf '%s\n' "$SECRET" > "$stage/servers/secret.txt")
-  tar cf - -C "$stage" servers boot image | ssh "${SSHO[@]}" "$host" "(if exist $REMOTE rmdir /s /q $REMOTE) & \
+  tar cf - -C "$stage" servers boot image clients | ssh "${SSHO[@]}" "$host" "(if exist $REMOTE rmdir /s /q $REMOTE) & \
 mkdir $REMOTE && tar xf - -C $REMOTE && \
 powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $REMOTE\\$script $*" || status=$?
   rm -rf "$stage"

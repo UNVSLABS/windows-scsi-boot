@@ -54,7 +54,7 @@ WDS is deprecated from the next Windows Server release, but supported on 2025 fo
 
 ## How setup.sh runs the scripts
 
-- **One SSH connection per step.** It copies `servers/`, `boot/` and `image/` to `C:\Windows\Temp\diskless` through Windows' `tar`, then runs the script, in the same connection. The password a step needs goes along as `servers\secret.txt`, which the script reads and deletes first. The image scripts share this ([servers/remote.sh](../servers/remote.sh)).
+- **One SSH connection per step.** It copies `servers/`, `boot/`, `image/` and `clients/` to `C:\Windows\Temp\diskless` through Windows' `tar`, then runs the script, in the same connection. The password a step needs goes along as `servers\secret.txt`, which the script reads and deletes first. The image and client scripts share this ([servers/remote.sh](../servers/remote.sh)).
 - **Restarts.** A script that needs one restarts Windows and prints `restarting: <why>` and its boot time. `setup.sh` waits for the boot time to change, then runs the script again; each one skips what's done. The causes:
   - updates the template's clones install by themselves;
   - the promotion;
@@ -77,7 +77,8 @@ Each of these was a failure on the way, on 2026-10-10:
 | A client leased 10.31.1.255: in a /16 that's a host address, and the exclusion ended at .254. After the fix, the DHCP server went on offering it and refusing it (NACK, PXE-E07) | The exclusion ends at .255, and the DHCP server restarts after an exclusion change |
 | The client's firmware had no network boot option at all | A VirtIO RNG on clients ([environment](environment.md#what-it-creates)) |
 | Windows Update restarted the storage server twice one night by itself, and every client booted from it would hang meanwhile (found 2026-10-11) | Both servers download updates, but install them and restart only when an admin says so (`AUOptions` 7) |
-| After that restart, the iSCSI target listened on nothing: its service had started before the static address was usable, and failed to bind (event 10, error 10049) | `configure.ps1` restarts it if it isn't listening. Starting it later isn't possible: Windows refuses delayed start for it (error 87), as it's in a load order group, and the earlier `sc.exe` call to set it failed unnoticed. Check port 3260 after the storage server restarts |
+| After that restart, the iSCSI target listened on nothing: its service had started before the static address was usable, and failed to bind (event 10, error 10049) | A startup task restarts it, a minute after each boot, until it listens on the server's address; `configure.ps1` does the same. Starting it later isn't possible: Windows refuses delayed start for it (error 87), as it's in a load order group, and the earlier `sc.exe` call to set it failed unnoticed. It happened again after a host restart on 2026-10-12, before the task |
+| After the same host restart, clients got no boot file over TFTP (PXE-E18): WDS had stopped 14 seconds into the domain controller's boot. Its image server couldn't reach a domain controller (0x4F1), as Active Directory on the same server wasn't answering yet, and that stops the whole WDS server. Its restart-on-failure actions never ran: Windows applies them only to crashes (found 2026-10-12) | WDS starts delayed, a couple of minutes after boot, and restarts after any failure (`sc.exe failureflag WDSServer 1`). `configure.ps1`'s check fails if nothing listens on UDP 69. Both servers restarted together afterwards: TFTP and iSCSI listened again within 2 minutes, with no help (the target bound by itself that time, and its task found it listening) |
 | iPXE: `memtest.efi... Permission denied` (HTTP 401) | Downloads copied, not moved, into `C:\BootFiles`, and its permissions reset |
 
 ## Setting it up

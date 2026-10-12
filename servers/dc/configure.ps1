@@ -116,6 +116,15 @@ Wds /Set-Server /UseDhcpPorts:No    # leave UDP 67 to the DHCP server
 # boot program (boot\x64\wdsmgfw.efi) instead of using option 67
 Wds /Set-Server /DhcpOption60:No
 if (Get-DhcpServerv4OptionValue -OptionId 60 -ErrorAction SilentlyContinue) { Remove-DhcpServerv4OptionValue -OptionId 60 }
+# At boot, WDS starts before Active Directory on this same server answers. Its image server then can't reach a domain
+# controller (0x4F1), and stops the whole server, TFTP too. And Windows restarts a failed service only after a crash,
+# unless told to after any failure. So it starts a couple of minutes after boot, and restarts if it stops with an error.
+sc.exe config WDSServer start= delayed-auto | Out-Null
+if ($LASTEXITCODE) { throw "sc.exe config WDSServer: $LASTEXITCODE" }
+sc.exe failure WDSServer reset= 3600 actions= restart/60000/restart/120000/restart/300000 | Out-Null
+if ($LASTEXITCODE) { throw "sc.exe failure WDSServer: $LASTEXITCODE" }
+sc.exe failureflag WDSServer 1 | Out-Null
+if ($LASTEXITCODE) { throw "sc.exe failureflag WDSServer: $LASTEXITCODE" }
 Start-Service WDSServer
 
 Step 'HTTP: IIS, static files under /boot'
@@ -168,6 +177,8 @@ Get-ChildItem $s.BootFiles -File | Where-Object Name -ne 'web.config' | ForEach-
   $response = Invoke-WebRequest $url -UseBasicParsing -Method Head
   if ($response.StatusCode -ne 200) { throw "$url returned HTTP $($response.StatusCode)" }
 }
+if (-not (Get-NetUDPEndpoint -LocalPort 69 -LocalAddress $s.DcAddress -ErrorAction SilentlyContinue)) { throw 'TFTP (WDS) is not listening' }
+"TFTP: WDSServer $((Get-Service WDSServer).Status), $((sc.exe qc WDSServer | Select-String 'START_TYPE') -replace '.*:\s*\d+\s+', '')"
 $fetched = (Invoke-WebRequest "http://$($s.DcAddress)/boot/boot.ipxe" -UseBasicParsing).Content
 if ($fetched -notmatch '^#!ipxe') { throw 'http://.../boot/boot.ipxe did not return the iPXE script' }
 Get-DhcpServerv4OptionValue | ForEach-Object { "server option $($_.OptionId): $($_.Value)" }

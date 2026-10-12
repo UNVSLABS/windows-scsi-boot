@@ -40,4 +40,9 @@
   BuildSecondNic    = 'vmxnet3'
   BuildSecondNicMac = '02:00:0A:1F:01:FC' # 10.31.1.252's, as lab/main.tf makes MACs. It leases from the dynamic pool
   SanSecondAddress  = '10.31.0.21'        # on the storage server's NIC as well, never a source address
+
+  # The clients (clients/, docs/clients.md): their computer accounts' OU, and its Group Policy
+  ClientOu   = 'Diskless clients'
+  ClientGpo  = 'Diskless clients'
+  PagefileMB = '2048' # the clients' pagefile, a fixed size: it's on the child disk, which every page written grows
 }

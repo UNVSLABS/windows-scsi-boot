@@ -1,6 +1,7 @@
 # Prepare the domain controller for a golden image build, and publish the build's files (PLAN.md, phase 2;
 # docs/image.md):
 # - the Windows ADK and its WinPE add-on, and WinPE with the driver pack, served as http://<dc>/boot/winpe/boot.wim;
+#   and the same WinPE for clients' first boot, winpe/firstboot.wim, which the build puts into the golden image;
 # - the install share, \\<dc>\install: the Windows media from the CD drive, the driver pack and the guest agent;
 # - for this build: the answer files on the share, the share's account enabled with a new password, WinPE's startup
 #   script (holding that password) over HTTP, and the build VM's iPXE script for setup and DHCP reservation.
@@ -173,6 +174,27 @@ if (-not (Test-Path $winpe)) {
 Copy-Item "$pe\Media\EFI\Microsoft\Boot\BCD", "$pe\Media\Boot\boot.sdi" (Split-Path $winpe) -Force
 "WinPE: $([math]::Round((Get-Item $winpe).Length / 1MB)) MB"
 
+# The first-boot WinPE: the same, with a startup that runs a client's first boot from the client's disk
+# (image/winpe/startnet-firstboot.cmd). The build puts it into the golden image (image/windows/firstboot-entry.ps1).
+$firstBoot = "$(Split-Path $winpe)\firstboot.wim"
+if (-not (Test-Path $firstBoot)) {
+  $work = 'C:\WinPE'
+  $mount = "$work\mount"
+  if (Test-Path $mount) { Dismount-WindowsImage -Path $mount -Discard -ErrorAction SilentlyContinue | Out-Null }
+  Remove-Item $work -Recurse -Force -ErrorAction SilentlyContinue
+  New-Item -ItemType Directory $mount | Out-Null
+  Copy-Item $winpe "$work\winpe.wim"
+  Mount-WindowsImage -ImagePath "$work\winpe.wim" -Index 1 -Path $mount | Out-Null
+  try {
+    Expand-Template "$root\image\winpe\startnet-firstboot.cmd" "$mount\Windows\System32\startnet.cmd" @{} -Cmd
+    Dismount-WindowsImage -Path $mount -Save | Out-Null
+  } catch { Dismount-WindowsImage -Path $mount -Discard | Out-Null; throw }
+  Export-WindowsImage -SourceImagePath "$work\winpe.wim" -SourceIndex 1 -DestinationImagePath "$work\firstboot.wim" | Out-Null
+  Copy-Item "$work\firstboot.wim" $firstBoot # a copy takes the folder's permissions, which IIS needs
+  Remove-Item $work -Recurse -Force
+}
+"first-boot WinPE: $([math]::Round((Get-Item $firstBoot).Length / 1MB)) MB"
+
 Step 'the build files'
 $values = @{
   IMAGE_INDEX = $s.ImageIndex; PRODUCT_KEY = $s.ProductKey; LOCALE = $s.Locale; UI_LANGUAGE = $s.UILanguage
@@ -188,8 +210,12 @@ icacls $build /inheritance:r /grant:r '*S-1-5-32-544:(OI)(CI)F' '*S-1-5-18:(OI)(
 Expand-Template "$root\image\windows\autounattend.xml" "$build\autounattend.xml" $values
 # What WinPE copies into the new Windows for its first logon
 Expand-Template "$root\image\windows\sysprep.xml" "$build\windows\sysprep.xml" $values
-Copy-Item "$root\image\windows\firstlogon.ps1", "$root\image\windows\generalize.ps1", "$share\tools\qemu-ga-x86_64.msi" "$build\windows"
+Copy-Item "$root\image\windows\firstlogon.ps1", "$root\image\windows\generalize.ps1", "$root\image\windows\firstboot-entry.ps1",
+  "$share\tools\qemu-ga-x86_64.msi" "$build\windows"
 Copy-Item "$env:ProgramData\ssh\administrators_authorized_keys" "$build\windows\authorized_keys" # the servers' keys
+# The clients' first boot, which generalize.ps1 adds once sysprep is done (firstboot-entry.ps1)
+New-Item -ItemType Directory "$build\windows\firstboot" | Out-Null
+Copy-Item $firstBoot, "$(Split-Path $winpe)\boot.sdi", "$root\image\winpe\firstboot.ps1" "$build\windows\firstboot"
 if ($Updates -eq 'updates') { New-Item "$build\windows\updates" | Out-Null }
 
 # Over HTTP: WinPE's job on the build VM, which holds the share's password (image/winpe/startnet.cmd fetches it)

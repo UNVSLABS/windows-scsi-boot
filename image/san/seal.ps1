@@ -1,6 +1,6 @@
 # Seal a golden image once image/build.sh's build VM has powered off (docs/image.md): take it off the build target,
-# check that sysprep generalised it, and make it read-only with both the file attribute and its ACL. A write to a parent
-# breaks every child disk on it. Run as admin. Safe to re-run.
+# check that sysprep generalised it and that it has the clients' first boot (docs/clients.md), and make it read-only with
+# both the file attribute and its ACL. A write to a parent breaks every child disk on it. Run as admin. Safe to re-run.
 param([Parameter(Mandatory)][int]$Version)
 #Requires -RunAsAdministrator
 $ErrorActionPreference = 'Stop'
@@ -29,6 +29,12 @@ try {
   $state = (Get-Content "$($partition.DriveLetter):\Windows\Setup\State\State.ini" | Select-String '^ImageState=(.*)').Matches.Groups[1].Value
   "image state: $state"
   if ($state -ne 'IMAGE_STATE_GENERALIZE_RESEAL_TO_OOBE') { throw "golden-v$Version isn't generalised" }
+  # And the clients' first boot, which generalize.ps1 adds after sysprep (docs/clients.md)
+  $firstBoot = "$($partition.DriveLetter):\Windows\Setup\Diskless"
+  foreach ($file in 'firstboot.wim', 'boot.sdi', 'firstboot.ps1') {
+    if (-not (Test-Path "$firstBoot\$file")) { throw "golden-v$Version has no $firstBoot\${file}: no first boot for clients" }
+  }
+  "first boot: $([math]::Round((Get-Item "$firstBoot\firstboot.wim").Length / 1MB)) MB of WinPE"
 } finally { Dismount-DiskImage $path | Out-Null }
 
 Step 'read-only'

@@ -22,9 +22,10 @@ servers = {
   }
 }
 
-# Three NIC models, for the NIC-independence test (PLAN.md; docs/image.md)
+# The clients (clients/clients.csv). NIC models the golden image boots (PLAN.md, NIC independence; docs/image.md):
+# the build NIC's model at net0, which needs nothing on its first boot, and the second family's. Not virtio.
 clients = {
-  "dl-ws-1" = { vm_id = 5031, address = "10.31.1.1", cores = 2, memory = 4096, nic_model = "virtio" }
+  "dl-ws-1" = { vm_id = 5031, address = "10.31.1.1", cores = 2, memory = 4096, nic_model = "vmxnet3" }
   "dl-ws-2" = { vm_id = 5032, address = "10.31.1.2", cores = 2, memory = 4096, nic_model = "e1000e" }
   "dl-ws-3" = { vm_id = 5033, address = "10.31.1.3", cores = 2, memory = 4096, nic_model = "vmxnet3" }
 }

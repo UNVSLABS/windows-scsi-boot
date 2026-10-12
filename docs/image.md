@@ -14,6 +14,7 @@ Phase 2 of the [plan](../PLAN.md): a sysprepped Windows 11 Enterprise LTSC 2024 
 | The NIC test, and what makes a NIC a boot NIC | **Done 2026-10-11** ([below](#nic-independence)) |
 | A second NIC family through the build: vmxnet3, standing in for a physical one | **Done 2026-10-11**: `golden-v3` boots e1000e and vmxnet3 clients ([results](#results)) |
 | A clean build with the scripts as they are: `golden-v4` | **Done 2026-10-11**: 11.6 GB, in 25 minutes (WinPE and setup 13, Windows 12). Boots the e1000e and vmxnet3 clients |
+| The clients' first boot in the image: WinPE, which makes a client's NIC a boot NIC on its own ([clients](clients.md#the-first-boot)): `golden-v5` | **Done 2026-10-12** |
 
 ## What a build makes
 
@@ -29,7 +30,8 @@ Phase 2 of the [plan](../PLAN.md): a sysprepped Windows 11 Enterprise LTSC 2024 
 | Drivers | The driver pack, added by setup before the image's first boot: virtio-win 0.1.302 (all its Windows 11 drivers), Intel 82574L 12.15.22.6 and vmxnet3 1.9.21.0. Plus the QEMU guest agent |
 | Settings | en-AU formats and keyboard, Adelaide time, en-US display. No automatic BitLocker, no sleep, no hibernation |
 | Windows Update | Off, by local policy. Clients get updates in new golden images. `--updates` installs them in the build |
-| Sysprep | Generalised for other hardware (no `/mode:vm`), keeping every installed driver and device. A client's first boot takes a random name and its own SID, with no questions |
+| Sysprep | Generalised for other hardware (no `/mode:vm`), keeping every installed driver and device. A client's first boot takes a random name, or the one New-Client gives it, and its own SID, with no questions |
+| First boot | A WinPE, `Windows\Setup\Diskless\firstboot.wim`, as Windows Boot Manager's default: on a client's first boot it makes the client's NIC a boot NIC, sets the default back to Windows, and restarts ([clients](clients.md#the-first-boot)). Since `golden-v5` |
 
 ## How a build works
 
@@ -37,9 +39,9 @@ Phase 2 of the [plan](../PLAN.md): a sysprepped Windows 11 Enterprise LTSC 2024 
 image/build.sh <N>                                                    PC, WSL
  1 vm-dl-san-1   blank golden-v<N>.vhdx on target "build", which accepts only dl-build-1's IQN; with a second NIC,
                  target "build-second" too, a small disk on the server's second address
- 2 vm-dl-dc-1    the ADK and WinPE with the NIC drivers (once); the install share with the media and drivers (once);
-                 this build's answer files, a new password for the share's account, and for dl-build-1 its boot
-                 script for setup, its WinPE job and a DHCP reservation
+ 2 vm-dl-dc-1    the ADK and WinPE with the NIC drivers, and the first-boot WinPE (once); the install share with the
+                 media and drivers (once); this build's answer files and first-boot files, a new password for the
+                 share's account, and for dl-build-1 its boot script for setup, its WinPE job and a DHCP reservation
  3 dl-build-1    with its second NIC as net1 (vmxnet3, the stand-in), if the build has one:
                  PXE ─▶ snponly.efi ─▶ clients/<mac>.ipxe ─▶ build.ipxe, setup:
                    clear the gateway, which iPXE would put in the iBFT;
@@ -50,8 +52,9 @@ image/build.sh <N>                                                    PC, WSL
                  (/noreboot), copy the first logon's files, power off
  4 PC            take net1 away, if it's there; dl-build-1's boot script for windows
  5 dl-build-1    PXE ─▶ snponly.efi ─▶ build.ipxe, windows: sanboot the build disk ─▶ setup finishes
-                 ─▶ firstlogon.ps1 ─▶ restart ─▶ generalize.ps1: sysprep, then power off
- 6 vm-dl-san-1   take golden-v<N> off the target, check that it's generalised, make it read-only
+                 ─▶ firstlogon.ps1 ─▶ restart ─▶ generalize.ps1: sysprep, the clients' first boot, then power off
+ 6 vm-dl-san-1   take golden-v<N> off the target, check that it's generalised and has the first boot, make it
+                 read-only
  7 vm-dl-dc-1    remove the build's files, and disable the share's account (also when the build fails)
 ```
 
@@ -59,6 +62,7 @@ image/build.sh <N>                                                    PC, WSL
 - **Its second NIC** is added by `build.sh` through the Proxmox API for step 3 only, as `net1`, with the model and MAC in `settings.psd1`. Here it's vmxnet3, standing in for a second physical NIC family ([NIC independence](#nic-independence)). Without `BuildSecondNic`, the build has one NIC and one disk ([Building for one NIC family](#building-for-one-nic-family)).
 - **WinPE** is the ADK's, 10.1.26100.9457. It has WMI and SecureStartup for Windows 11's setup, PowerShell, and the driver pack's NIC drivers. wimboot boots it from `http://<dc>/boot/winpe/`, with the BCD and `boot.sdi` from the ADK's WinPE media.
 - **WinPE's jobs.** WinPE's own `startnet.cmd` ([image/winpe/startnet.cmd](../image/winpe/startnet.cmd)) fetches `http://<dc>/boot/jobs/<mac>.cmd` for its MAC and runs it. The build's job is [image/winpe/build.cmd](../image/winpe/build.cmd). Without a job, WinPE stops at a prompt, for recovery.
+- **The first-boot WinPE** is the same WinPE with another startup, which runs a client's first boot from the client's disk ([image/winpe/startnet-firstboot.cmd](../image/winpe/startnet-firstboot.cmd)). `prepare.ps1` makes it as `winpe/firstboot.wim` and puts it on the share with the build's files; WinPE copies it into the new Windows, and `generalize.ps1` adds its boot entry once sysprep is done ([clients](clients.md#the-first-boot)). The entry is made there, by the running Windows, because bcdedit on the storage server, with the image mounted, would tie it to the VHDX file.
 - **Setup is the previous version,** `sources\setup.exe`. Windows 11 24H2's new setup has been reported to quit silently at an iSCSI disk.
 - **The install share,** `\\<dc>\install`, holds:
   - the media (`media\`);
@@ -103,7 +107,7 @@ Without the first, Windows stops with INACCESSIBLE_BOOT_DEVICE at once; without 
 
 **Device identity.** Windows names a PCI device by its model and its location, or by a PCIe serial number where the device has one. Proxmox puts a q35 VM's NICs behind a PCI bridge, where QEMU's e1000e and vmxnet3 have no serial number, so `net0` is the same device in every VM with the same model: `...\5&2490727a&0&9008F0`. Sysprep keeps installed devices (`PersistAllDeviceInstalls`), so the build NIC's device and interface are in the image already. Any other NIC is a new device: another model, another slot, and physical machines.
 
-**So each client's NIC needs its interface made once, unless it's the build NIC's model at the build NIC's slot:** WinPE on the client, with its disk attached, runs `/Add-NetAdapter` for its NIC on that disk (the `netadapter` variant of the test, [image/winpe/netadapter.cmd](../image/winpe/netadapter.cmd)). That's a step of the client's first boot in phase 3.
+**So each client's NIC needs its interface made once, unless it's the build NIC's model at the build NIC's slot:** WinPE on the client, with its disk attached, runs `/Add-NetAdapter` for its NIC on that disk. The test did it with WinPE from the network (the `netadapter` variant, [image/winpe/netadapter.cmd](../image/winpe/netadapter.cmd)); since `golden-v5`, the image does it itself on each client's first boot, with a WinPE it carries ([clients](clients.md#the-first-boot)).
 
 **And each NIC family needs its driver package reflected, which setup does only for the NICs in the iBFT.** Windows reads two NICs from the iBFT, whatever iPXE writes: a third was left out. So an image has up to two families' packages: the build VM's own NIC's, and that of a second NIC the build adds while setup runs (`BuildSecondNic`). A package covers every device its INF lists, not only the NIC it was reflected through:
 
@@ -129,7 +133,7 @@ How the build gets the second NIC into the iBFT:
 - then it applies a variant: `none`, `bootflags`, `bootstart`, or `netadapter` (WinPE on the client runs `/Add-NetAdapter` for its NIC on the disk, and sets `BootFlags` 1 on the NIC's service, copying WinPE's if the image has none);
 - then it boots the client, and passes if Windows finishes its first boot within 20 minutes.
 
-The clients have three NIC models: `dl-ws-1` virtio, `dl-ws-2` e1000e, `dl-ws-3` vmxnet3.
+The clients had three NIC models for the test: `dl-ws-1` virtio, `dl-ws-2` e1000e, `dl-ws-3` vmxnet3. `dl-ws-1` has had vmxnet3 since phase 3, which needs three clients that boot the image. On an image with the clients' first boot, `golden-v5` and later, every variant starts with that first boot, so `none` is the one to use.
 
 ### Results
 
@@ -210,4 +214,4 @@ After [the servers](servers.md), from this repo in WSL:
    ```
    It refuses a version that's already built. An unfinished build of the same version is replaced. The first run takes half an hour more, for the ADK and WinPE.
 
-**To change WinPE,** for example after a change to the driver pack or its startup: delete `C:\BootFiles\winpe` on the domain controller, and the next build makes it again. **To take a new driver release:** change its entry in `drivers.psd1`, and delete its folder in `C:\Install\drivers` and `C:\BootFiles\winpe`. **To change the second NIC model:** `BuildSecondNic` in `settings.psd1`. **To build for one NIC family:** [above](#building-for-one-nic-family).
+**To change WinPE,** for example after a change to the driver pack or its startup: delete `C:\BootFiles\winpe` on the domain controller, and the next build makes it again, the first-boot WinPE with it. Images already built keep the first-boot WinPE they were built with. **To take a new driver release:** change its entry in `drivers.psd1`, and delete its folder in `C:\Install\drivers` and `C:\BootFiles\winpe`. **To change the second NIC model:** `BuildSecondNic` in `settings.psd1`. **To build for one NIC family:** [above](#building-for-one-nic-family).
