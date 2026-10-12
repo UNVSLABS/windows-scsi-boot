@@ -145,7 +145,7 @@ The clients had three NIC models for the test: `dl-ws-1` virtio, `dl-ws-2` e1000
 | `golden-v3` and `golden-v4`, built on an e1000e with vmxnet3 as the second NIC | e1000e, `net0` | **Passed,** 2 minutes | |
 | | vmxnet3, `net0`: the second NIC was `net1` | | **Passed,** 3 minutes |
 
-`golden-v3` was built with one-off scripts, `golden-v4` with the ones in this repo. `golden-v1` and `golden-v3` have since been deleted; `golden-v2`, a build whose iBFT had one NIC, too.
+`golden-v3` was built with one-off scripts, `golden-v4` with the ones in this repo. `golden-v1` and `golden-v3` have since been deleted; `golden-v2`, a build whose iBFT had one NIC, too. `golden-v4` was deleted on 2026-10-12: it predates the clients' first boot, and `golden-v5` replaced it ([clients](clients.md#results)).
 
 ## Building for one NIC family
 
