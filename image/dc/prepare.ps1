@@ -146,7 +146,8 @@ if (-not (Test-Path $winpe)) {
       }
     }
     # The pack's NIC drivers: WinPE reaches the iSCSI disks in the iBFT and the share through them, once plug and play
-    # has loaded them. Setup also makes each iBFT NIC whose driver WinPE uses a boot NIC of the new Windows.
+    # has loaded them. Setup also makes the first two NICs in the iBFT boot NICs of the new Windows, with WinPE's
+    # drivers for them.
     $nics = Get-ChildItem "$share\drivers" -Recurse -Filter *.inf | Where-Object { Select-String -Path $_.FullName -Pattern '^\s*Class\s*=\s*Net\b' -Quiet }
     foreach ($inf in $nics) {
       Add-WindowsDriver -Path $mount -Driver $inf.FullName | Out-Null

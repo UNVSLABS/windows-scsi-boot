@@ -88,7 +88,7 @@ How WinPE and then Windows take over the iSCSI disk that iPXE attached, as seen 
 
 - **The iBFT has no gateway.** Windows adds a route to the iSCSI target through the gateway in the iBFT, even when the target is on its own subnet. A gateway that doesn't route that traffic back onto the subnet breaks the connection: WinPE made the boot session, but it never connected, and the target logged no login. iPXE copies the NIC's gateway into the iBFT, so [build.ipxe](../boot/build.ipxe) and [client.ipxe](../boot/client.ipxe) clear it (`set net0/gateway 0.0.0.0`) before `sanboot` or `sanhook`. Windows then reaches the target directly, and still takes its default gateway from DHCP, so the internet works.
 - **WinPE connects the disks itself,** once plug and play has loaded the NICs' drivers. The drivers don't load at boot in WinPE: DISM only stages NIC drivers. The job waits up to 3 minutes for the disks.
-- **Setup makes each iBFT NIC a boot NIC of the new Windows,** for every NIC it can match to one of WinPE's (`NICs in iBFT: 2; NICs resolved: 2` in `setupact.log`). For each, it imports the driver package that WinPE uses into the new Windows and *reflects it as critical* (`Driver Install ... Driver Result: [0x0]`), which registers it in the image's `SYSTEM` hive and creates its service; then it runs `dism /Add-NetAdapter` for it (log: `Windows\Panther\iscsi_boot_net.log`). The answer file adds the driver pack in the offlineServicing pass, which setup applies just before.
+- **Setup makes the iBFT's NICs boot NICs of the new Windows,** the first two of them ([below](#setup-takes-two-nics-from-the-ibft)), each that it can match to one of WinPE's (`NICs in iBFT: 2; NICs resolved: 2` in `setupact.log`). For each, it imports the driver package that WinPE uses into the new Windows and *reflects it as critical* (`Driver Install ... Driver Result: [0x0]`), which registers it in the image's `SYSTEM` hive and creates its service; then it runs `dism /Add-NetAdapter` for it (log: `Windows\Panther\iscsi_boot_net.log`). The answer file adds the driver pack in the offlineServicing pass, which setup applies just before.
 - **What the new Windows boots with:**
 
   | Service | Start | `BootFlags` |
@@ -105,7 +105,7 @@ How WinPE and then Windows take over the iSCSI disk that iPXE attached, as seen 
 Found in the [plan's test](../PLAN.md#nic-independence), 2026-10-11.
 
 **A NIC boots the image only if two things are in it:**
-1. **Its driver package, reflected as critical:** in the image's `SYSTEM` hive (`DriverDatabase`, with the package's configurations), and its service. The kernel then sets up a device of that model while it boots, before any disk is there. Setup does this only for the NICs in the iBFT. DISM, and the answer file's driver pack, only *stage* network drivers: their configurations stay in the `DRIVERS` hive, which the kernel can't read until the boot disk is there.
+1. **Its driver package, reflected as critical:** in the image's `SYSTEM` hive (`DriverDatabase`, with the package's configurations), and its service. The kernel then sets up a device of that model while it boots, before any disk is there. Setup does this only for the first two NICs in the iBFT. DISM, and the answer file's driver pack, only *stage* network drivers: their configurations stay in the `DRIVERS` hive, which the kernel can't read until the boot disk is there.
 2. **A network interface for that device, at its PCI location:** what `dism /Add-NetAdapter` writes, binding TCP/IP to it at boot. It needs the live NIC (`/HostAdapter`), and keys the interface to the NIC's location path, such as `PCIROOT(0)#PCI(1E00)#PCI(0100)#PCI(1200)`.
 
 Without the first, Windows stops with INACCESSIBLE_BOOT_DEVICE at once; without the second, a few minutes into the boot.
@@ -114,7 +114,7 @@ Without the first, Windows stops with INACCESSIBLE_BOOT_DEVICE at once; without 
 
 **So each client's NIC needs its interface made once, unless it's the build NIC's model at the build NIC's slot:** WinPE on the client, with its disk attached, runs `/Add-NetAdapter` for its NIC on that disk. The test did it with WinPE from the network (the `netadapter` variant, [image/winpe/netadapter.cmd](../image/winpe/netadapter.cmd)); since `golden-v5`, the image does it itself on each client's first boot, with a WinPE it carries ([clients](clients.md#the-first-boot)).
 
-**And each NIC family needs its driver package reflected, which setup does only for the NICs in the iBFT.** Windows reads two NICs from the iBFT, whatever iPXE writes: a third was left out. So an image has up to two families' packages: the build VM's own NIC's, and that of a second NIC the build adds while setup runs (`BuildSecondNic`). A package covers every device its INF lists, not only the NIC it was reflected through:
+**And each NIC family needs its driver package reflected, which setup does only for the first two NICs in the iBFT,** however many it lists ([below](#setup-takes-two-nics-from-the-ibft)). So an image has up to two families' packages: the build VM's own NIC's, and that of a second NIC the build adds while setup runs (`BuildSecondNic`). A package covers every device its INF lists, not only the NIC it was reflected through:
 
 | Slot | Here | Its package | What it covers |
 |---|---|---|---|
@@ -151,6 +151,18 @@ The clients had three NIC models for the test: `dl-ws-1` virtio, `dl-ws-2` e1000
 | | vmxnet3, `net0`: the second NIC was `net1` | | **Passed,** 3 minutes |
 
 `golden-v3` was built with one-off scripts, `golden-v4` with the ones in this repo. `golden-v1` and `golden-v3` have since been deleted; `golden-v2`, a build whose iBFT had one NIC, too. `golden-v4` was deleted on 2026-10-12: it predates the clients' first boot, and `golden-v5` replaced it ([clients](clients.md#results)). `golden-v5` to `golden-v9` were deleted on 2026-10-13, once the clients were on `golden-v10` ([clients](clients.md#maintenance-results)).
+
+### Setup takes two NICs from the iBFT
+
+Tested 2026-10-13, with one-off scripts. The build VM had three NICs, each reaching a disk of its own through its own address on the storage server: the build's e1000e (`net0`), vmxnet3 (`net1`) and a second e1000e (`net2`). Setup ran in WinPE as in a build, onto a throwaway disk.
+
+| Stage | What it had |
+|---|---|
+| iPXE | Three NICs and three targets in the iBFT, each target tied to its own NIC. The iBFT allows more than two: version 1.03 sets only a minimum length for the control structure that lists them, and iPXE lengthens it |
+| WinPE | The same table among the ACPI tables (`GetSystemFirmwareTable`), and all three disks connected |
+| Setup | `NICs in iBFT: 2; NICs resolved: 2`: the e1000e and vmxnet3. Both packages reflected, and `/Add-NetAdapter` for each. Nothing logged about the third |
+
+So setup takes the first two NICs, whatever they are: the third was skipped although its driver package, Intel's, was being reflected for the first. An earlier test, on 2026-10-11, had three families, e1000e, virtio and vmxnet3, and setup again counted two, leaving out vmxnet3, the third. A third family needs an image of its own, or a second family whose driver package covers more of the NICs wanted.
 
 ## Building for one NIC family
 
@@ -237,7 +249,7 @@ Each of these was a failure on the way, on 2026-10-10 and 11:
 | Sysprep never ran: `Optimize-Volume -ReTrim` failed, because the iSCSI target presents the disk as fully provisioned, so Windows can't trim it | No trim |
 | Only the build NIC's model booted the image ([above](#nic-independence)) | A second NIC model through the build, and the client's interface made by WinPE |
 | iPXE saw only the build VM's first NIC: `snponly.efi` drives only the NIC it was loaded from | The build chains `ipxe.efi` for setup |
-| Three NICs in iPXE's iBFT, two in setup's log: Windows reads two | One second family |
+| Three NICs in iPXE's iBFT, two in setup's log: setup takes the first two ([above](#setup-takes-two-nics-from-the-ibft)) | One second family |
 | Setup aborted at virtio's driver: "a required driver could not be installed" (0x80070001) | vmxnet3 as the second family's stand-in |
 | Setup's specialize pass restarted the VM, "The computer restarted unexpectedly", with the second NIC still in it | WinPE powers off, and `build.sh` takes the NIC away before Windows' first boot |
 | The iBFT had one NIC again when iPXE had tried to boot the blank disk before chaining `ipxe.efi` | The build's boot chains it before attaching anything, and knows its phase rather than trying the disk |

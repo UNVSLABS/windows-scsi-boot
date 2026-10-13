@@ -40,8 +40,8 @@ echo Installing onto disk %DISK%
 rem Windows 11's setup checks for Secure Boot, which is off: the stock iPXE is unsigned
 reg add HKLM\SYSTEM\Setup\LabConfig /v BypassSecureBootCheck /t REG_DWORD /d 1 /f >nul
 
-rem The previous version of setup, sources\setup.exe: 24H2's new one has been seen to quit at an iSCSI disk. /noreboot
-rem leaves time to copy files in afterwards.
+rem The previous version of setup, sources\setup.exe: 24H2's new one has been reported to quit at an iSCSI disk.
+rem /noreboot leaves time to copy files in afterwards.
 echo Running setup
 Z:\media\sources\setup.exe /unattend:X:\autounattend.xml /noreboot
 echo Setup exited with %errorlevel%
