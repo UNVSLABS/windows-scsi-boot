@@ -8,7 +8,7 @@ Phase 0 of the [plan](../PLAN.md): the Proxmox pool and permissions, the flat ne
 |---|---|---|---|---|---|
 | vm-dl-dc-1 | 5010 | Full clone of 9021 `tpl-win2025`, with the Windows 11 LTSC ISO in its CD drive | 2 vCPU, 4 GiB, 64 GB | 10.31.0.10 | Running, named, on its static address |
 | vm-dl-san-1 | 5020 | Full clone of 9021, plus a 200 GB data disk | 4 vCPU, 8 GiB, 64 GB + 200 GB | 10.31.0.20 | Running, named, on its static address |
-| dl-ws-1 to dl-ws-3 | 5031-5033 | Empty: UEFI without Secure Boot keys, TPM 2.0, a VirtIO RNG, no disk, boots from `net0`. NICs: vmxnet3, e1000e and vmxnet3. dl-ws-1 had virtio for the NIC test, which the golden image can't boot ([image](image.md#nic-independence)) | 2 vCPU, 4 GiB | DHCP reservation for 10.31.1.1-.3, made by `clients/new-client.sh` | Stopped |
+| dl-ws-1 to dl-ws-3 | 5031-5033 | Empty: UEFI without Secure Boot keys, TPM 2.0, a VirtIO RNG, no disk, boots from `net0`. NICs: virtio, e1000e and vmxnet3, one of each family the golden image boots ([image](image.md#nic-independence)). dl-ws-1 had vmxnet3 from phase 3 until `golden-v11`, which was the first image to boot virtio | 2 vCPU, 4 GiB | DHCP reservation for 10.31.1.1-.3, made by `clients/new-client.sh` | Stopped |
 | dl-build-1 | 5030 | Empty, like the clients, with an e1000e NIC. Builds golden images ([image](image.md)) | 4 vCPU, 4 GiB | DHCP reservation for 10.31.1.250, made by the build | Stopped |
 
 - **Fixed MACs:** `02:00` followed by the address in hex (10.31.1.1 is `02:00:0A:1F:01:01`). DHCP reservations and ARP caches keep working across a rebuild. `terraform output clients` prints them for `clients.csv`.

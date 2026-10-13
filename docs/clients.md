@@ -12,6 +12,7 @@ Phases 3 and 4 of the [plan](../PLAN.md): a client is a machine with no disk tha
 | Three clients boot together from one golden image, joined to the domain; a domain user logs on; child disk sizes | **Done 2026-10-12** ([results](#results)) |
 | `update-clients.sh`: the three clients from `golden-v5` to `golden-v6`, end to end | **Done 2026-10-12** ([results](#an-update-golden-v5-to-golden-v6)) |
 | What clients do when the storage server or the domain controller goes away, and how to recover them | **Done 2026-10-12** ([below](#when-a-server-restarts)): clients wait up to 10 minutes for the storage server since `golden-v6` |
+| The three clients on three NIC families, virtio, e1000e and vmxnet3, from one golden image | **Done 2026-10-14** on `golden-v11` ([results](#three-nic-families-golden-v11)) |
 | Windows' automatic maintenance grew a new client's disk from 1.5 to 7.5–8 GB within half an hour | **Partly done 2026-10-13:** about 2.8 GB since `golden-v10`, with no defrag, last-access times or swap assessment, and the native images compiled in the image; about 1.5 GB is still unexplained ([below](#automatic-maintenance)) |
 
 ## What a client is
@@ -184,8 +185,9 @@ Running clients don't need it: their disk is on the storage server, and their ad
 | Names | Fail: the domain controller is the clients' DNS server. So the internet, by name, fails too. Domain logons should work only for users with a logon cached on that client (not tested) |
 | A client that starts | Gets no address (PXE-E18), tries IPv6 PXE and HTTP boot, and stops at "No bootable option or device was found" after about 5 minutes, where it stays |
 | Once it's back | DNS, the internet and the secure channel work again on their own. Its boot files are served about 2 minutes after it starts |
+| A client that starts in those 2 minutes | Gets an address, but no boot file: the DHCP server answers within seconds of the domain controller starting, and WDS, which serves the TFTP, only about 2 minutes later (on 2026-10-14, 13 seconds and 2 minutes 18 seconds after it booted). The download times out (PXE-E18), and the client stops at "No bootable option" as above |
 
-**To recover a client** that started while the domain controller was away: restart it once the domain controller is back.
+**To recover a client** that started while the domain controller was away, or just after it started: restart it once the domain controller has been up for a few minutes.
 
 ## What each piece is for
 
@@ -293,6 +295,18 @@ The tests behind [Automatic maintenance](#automatic-maintenance), 2026-10-12 and
   WinSAT's test files, `Windows\SystemTemp\TempWinSAT-Disk-*.tmp`, came from `winsat.exe disk -wsswap`, which SysMain's `WsSwapAssessmentTask` ran twice (WinSAT's log). The trace names writes by the kernel's file object, which is reused, so a name can be another file's.
 - **`golden-v10`, after its first maintenance:** opening and reading the start of all 62,664 files in `Windows\WinSxS`, in 18,606 directories, wrote 30 MB and grew the disk by 0.03 GB.
 - **`golden-v7` to `golden-v10`** are 12.2 GB each, as `golden-v6`. With no change by hand, each took about 13 minutes.
+
+### Three NIC families: golden-v11
+
+2026-10-14. `dl-ws-1` got a virtio NIC from Terraform, its MAC kept, and `update-clients.sh 11` moved the three clients, all off, from `golden-v10` to `golden-v11` in 10 seconds. `golden-v11` is the first image whose seal makes every NIC driver in the driver pack a boot driver ([image](image.md#how-the-seal-makes-nic-drivers-boot-drivers)). Started together with `check.sh --boot`:
+
+| | dl-ws-1 | dl-ws-2 | dl-ws-3 |
+|---|---|---|---|
+| NIC | virtio: NetKVM 100.103.104.30200, 10 Gbps | e1000e at `net0`, the build NIC's model and slot: Intel 82574L 12.15.22.6, 1 Gbps | vmxnet3 1.9.21.0, 1 Gbps |
+| First boot, set up and joined | 5 minutes | 5 minutes | 7 minutes |
+| Disk after it | 1.29 GB | 1.29 GB | 1.20 GB |
+
+All three had their own names and SIDs, a working secure channel, their reserved addresses, the GPO, and `BootFlags` 1 on their NIC's service. Their first start came 2 minutes after the domain controller's, before WDS served TFTP, and all three stopped at "No bootable option" ([above](#the-domain-controller)); stopped and started again half an hour later, they booted as above.
 
 ## Using it
 

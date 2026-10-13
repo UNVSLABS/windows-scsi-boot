@@ -84,7 +84,7 @@ Client (VM or physical)                              vm-dl-dc-1: AD DS, DNS, DHC
 |---|---|---|---|
 | vm-dl-dc-1 | Full clone of 9021 | 2 vCPU, 4 GiB, 64 GB | 10.31.0.10, MAC `02:00:0A:1F:00:0A` |
 | vm-dl-san-1 | Full clone of 9021 | 4 vCPU, 8 GiB, 64 GB OS disk + 200 GB thin data disk | 10.31.0.20, MAC `02:00:0A:1F:00:14` |
-| dl-ws-1 to dl-ws-3 | Empty: UEFI without Secure Boot keys, TPM 2.0, a VirtIO RNG, no disk, boots from the network. NICs vmxnet3, e1000e and vmxnet3: models the golden image boots | 2 vCPU, 4 GiB each | DHCP reservation per fixed MAC |
+| dl-ws-1 to dl-ws-3 | Empty: UEFI without Secure Boot keys, TPM 2.0, a VirtIO RNG, no disk, boots from the network. NICs virtio, e1000e and vmxnet3: one of each family the golden image boots | 2 vCPU, 4 GiB each | DHCP reservation per fixed MAC |
 | dl-build-1 | Empty, like the clients, with an Intel e1000e NIC. Builds golden images | 4 vCPU, 4 GiB | DHCP reservation, 10.31.1.250 |
 
 - **Fixed MACs** are `02:00` followed by the IPv4 address in hex.
