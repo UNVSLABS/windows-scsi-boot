@@ -14,21 +14,26 @@ if ((Get-Command Get-BitLockerVolume -ErrorAction SilentlyContinue) -and (Get-Bi
   while ((Get-BitLockerVolume C:).VolumeStatus -ne 'FullyDecrypted') { Start-Sleep 10 }
 }
 
-# Windows' automatic maintenance runs in a client's first idle minutes, and everything it moves or rewrites lands in the
-# client's own child disk (docs/clients.md, Automatic maintenance). So nothing defragments a client's disk, which is
-# never worth it:
+# Windows' automatic maintenance runs in a client's first idle minutes, and everything it writes lands in the client's
+# own child disk: a whole 2 MB block for each part of the disk it first writes to, so small writes spread over the disk
+# grow it by gigabytes (docs/clients.md, Automatic maintenance). So:
+# - no last-access times: as maintenance reads files all over the disk, NTFS writes each one's last-access time into
+#   its directory's index, a small write in nearly every directory. User managed, so Windows doesn't turn it back on;
 # - no boot optimization: SysMain, the prefetcher, has defrag.exe -b move the files that start Windows and apps
 #   together, unless EnableAutoLayout is 0;
 # - no scheduled defrag. The first time defrag.exe runs after setup, whatever runs it, it registers its task again,
-#   enabled, unless fUpgradeRestored says it has done so already.
+#   enabled, unless fUpgradeRestored says it has done so already;
+# - no swap assessment: SysMain's task runs WinSAT's disk test, which writes two 100 MB files.
 # And .NET's queued native images are compiled here, once for every client. Not fatal: an image without them works,
 # and clients compile them.
+fsutil behavior set disablelastaccess 1 | Select-Object -First 1
 foreach ($key in 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\OptimalLayout', 'HKLM:\SOFTWARE\Microsoft\Dfrg\TaskSettings') {
   if (-not (Test-Path $key)) { New-Item $key | Out-Null }
 }
 Set-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\OptimalLayout' EnableAutoLayout 0 -Type DWord
 Disable-ScheduledTask -TaskPath '\Microsoft\Windows\Defrag\' -TaskName ScheduledDefrag | ForEach-Object { "scheduled defrag: $($_.State)" }
 Set-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Dfrg\TaskSettings' fUpgradeRestored 1 -Type DWord
+Disable-ScheduledTask -TaskPath '\Microsoft\Windows\Sysmain\' -TaskName WsSwapAssessmentTask | ForEach-Object { "swap assessment: $($_.State)" }
 foreach ($ngen in Get-ChildItem "$env:SystemRoot\Microsoft.NET\Framework*\v4.*\ngen.exe") {
   $out = @(& $ngen.FullName executeQueuedItems /nologo)
   "$($ngen.FullName) executeQueuedItems: exit code $LASTEXITCODE, $(@($out -match 'Compiling assembly').Count) assemblies compiled"

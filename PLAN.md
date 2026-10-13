@@ -128,13 +128,13 @@ Its NIC model must be one the golden image's build had ([NIC independence](#nic-
   - The client's first boot makes its NIC a boot NIC, then finishes Windows setup into the child, on its own hardware.
 - **Children persist until the next image update.** An update recreates every child from the new golden image, so anything stored on a client is wiped then.
 - **Windows Update is off on clients,** through Group Policy. Updates arrive in new golden images, which keeps children small.
-- **Nothing defragments a client's disk, and .NET's native images are compiled in the golden image,** since `golden-v9`. Otherwise Windows' automatic maintenance, in a new client's first idle minutes, moves and writes gigabytes, all of which land in its child ([docs/clients.md](docs/clients.md#automatic-maintenance)).
+- **Nothing defragments a client's disk, NTFS keeps no last-access times, and .NET's native images are compiled in the golden image,** since `golden-v10`. Otherwise Windows' automatic maintenance, in a new client's first idle minutes, moves and writes over the whole disk, and a child grows by a 2 MB block for each part of the disk first written, however little ([docs/clients.md](docs/clients.md#automatic-maintenance)).
 
 | Storage (measured in phase 3) | Size |
 |---|---|
 | Golden image, per version | 12.2 GB (`golden-v5` and `golden-v6`, with 0.5 GB of WinPE for the first boot). The clients' version, and the one before to roll back to, until deleted by hand |
 | Child, after first boot | 1.1–1.2 GB; 1.3 GB after the second; about 0.4 GB more for each user's first logon |
-| Child, grows by | the client's writes until the next image update, plus its pagefile as it's written, up to its fixed 2 GB (Group Policy); and about 3 GB at Windows' first automatic maintenance, 10 minutes after its first start (since `golden-v9`; 6 GB before) |
+| Child, grows by | the client's writes until the next image update, plus its pagefile as it's written, up to its fixed 2 GB (Group Policy); and about 1.5 GB at Windows' first automatic maintenance, 10 minutes after its first start (since `golden-v10`; 6 GB before) |
 
 Microsoft's own example: one 40 GB base image plus 2 GB per client is 552 GB for 256 machines, instead of about 10 TB of full copies.
 
@@ -270,7 +270,7 @@ So:
 | A failed disk boot | iPXE goes back to its menu after 30 seconds, whose default boots Windows | A client that starts, or goes down and restarts, while the storage server is away gets its disk once it's back, with no one there |
 | Server updates | Downloaded automatically, installed and restarted by an admin | Clients pause while the storage server restarts, and go down if it's away for longer than they wait, so restarts must be planned |
 | How long clients wait for their disk | 10 minutes: the iSCSI initiator's `MaxRequestHoldTime`, in the golden image, rather than Windows' 60 seconds | A storage server restart can take longer than a minute, and a client that stops waiting goes down ([docs/clients.md](docs/clients.md#the-storage-server)) |
-| Windows' automatic maintenance on clients | The golden image's seal turns off SysMain's boot optimization (`EnableAutoLayout` 0) and the scheduled defrag, and compiles .NET's queued native images. The rest of the maintenance runs | Every block maintenance moves or writes lands in a client's child disk for good. At its first maintenance a new client grew from 1.5 GB to 7.5–8 GB; with these, to about 4.3 GB. In the image, rather than Group Policy, because a client has it from its first start, and native images can only be compiled once in the image ([docs/clients.md](docs/clients.md#automatic-maintenance)) |
+| Windows' automatic maintenance on clients | The golden image's seal turns off NTFS's last-access times, SysMain's boot optimization (`EnableAutoLayout` 0), the scheduled defrag and SysMain's swap assessment, and compiles .NET's queued native images. The rest of the maintenance runs | Everything maintenance writes lands in a client's child disk for good, a whole 2 MB block for each part of the disk it first writes to. At its first maintenance a new client grew from 1.5 GB to 7.5–8 GB; with these, to about 2.8 GB. In the image, rather than Group Policy, because a client has it from its first start, and native images can only be compiled once in the image ([docs/clients.md](docs/clients.md#automatic-maintenance)) |
 
 ## Risks
 
@@ -285,7 +285,7 @@ So:
 
 ## Open questions
 
-1. **Windows' automatic maintenance on clients** (found in phase 4, partly addressed 2026-10-13): a new client's first maintenance, 10 minutes after it starts, grew its disk from 1.5 GB to 7.5–8 GB. Since `golden-v9` there's no defrag and the native images are compiled in the image, and it grows to about 4.3 GB. The remaining 2.5 GB come 4 to 9 minutes into that maintenance, from writes that NTFS's change journal doesn't show; not the pagefile, reads or trims. A disk I/O trace of a new client's first maintenance is the next step ([docs/clients.md](docs/clients.md#automatic-maintenance)).
+1. **Windows' automatic maintenance on clients** (found in phase 4, partly addressed 2026-10-13): a new client's first maintenance, 10 minutes after it starts, grew its disk from 1.5 GB to 7.5–8 GB. Since `golden-v10`, with no defrag, last-access times or swap assessment, and the native images compiled in the image, it grows to about 2.8 GB. A disk I/O trace found that a child grows by whole 2 MB blocks, so small writes spread over the disk cost the most. The remaining 1.5 GB is such writes: single small ones into some 500 directories of Windows' apps and their assets, 4 to 9 minutes into maintenance, not caused by reading and not in NTFS's change journal. A trace of file operations by process is the next step ([docs/clients.md](docs/clients.md#automatic-maintenance)).
 2. **Physical NIC models to support.** Each needs its driver in the driver pack and the NIC in the build ([NIC independence](#nic-independence)): passed through to the build VM, if the host can, or a physical build machine.
 
 ## Repo layout

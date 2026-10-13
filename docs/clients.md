@@ -12,7 +12,7 @@ Phases 3 and 4 of the [plan](../PLAN.md): a client is a machine with no disk tha
 | Three clients boot together from one golden image, joined to the domain; a domain user logs on; child disk sizes | **Done 2026-10-12** ([results](#results)) |
 | `update-clients.sh`: the three clients from `golden-v5` to `golden-v6`, end to end | **Done 2026-10-12** ([results](#an-update-golden-v5-to-golden-v6)) |
 | What clients do when the storage server or the domain controller goes away, and how to recover them | **Done 2026-10-12** ([below](#when-a-server-restarts)): clients wait up to 10 minutes for the storage server since `golden-v6` |
-| Windows' automatic maintenance grew a new client's disk from 1.5 to 7.5–8 GB within half an hour | **Partly done 2026-10-13:** about 4.3 GB since `golden-v9`, with no defrag and the native images compiled in the image; about 2.5 GB is still unexplained ([below](#automatic-maintenance)) |
+| Windows' automatic maintenance grew a new client's disk from 1.5 to 7.5–8 GB within half an hour | **Partly done 2026-10-13:** about 2.8 GB since `golden-v10`, with no defrag, last-access times or swap assessment, and the native images compiled in the image; about 1.5 GB is still unexplained ([below](#automatic-maintenance)) |
 
 ## What a client is
 
@@ -93,19 +93,25 @@ The GPO `Diskless clients`, linked to the OU `Diskless clients`, which New-Clien
 
 Windows runs its automatic maintenance when a machine is idle: defragmenting, compiling .NET's native images, Defender's scans, and some 50 smaller tasks. A new client has never had any, so it starts about 10 minutes after the client's Windows does, at its logon screen. Everything it moves or writes lands in the client's child disk for good: the iSCSI target can't trim it ([image](image.md#what-each-piece-is-for)).
 
+**And a child grows by whole blocks of 2 MB.** The first write to any 2 MB of the disk, even of 4 KB, makes the child 2 MB larger. So it's not how much maintenance writes that counts, but over how much of the disk it spreads: in a trace of a client on `golden-v9`, 1.1 GB of writes touched 2,162 blocks, and grew its child by about 3.2 GB ([results](#maintenance-results)).
+
 The golden image takes away what grew children most, before sysprep ([image/windows/generalize.ps1](../image/windows/generalize.ps1)):
 
 | | How | Since |
 |---|---|---|
+| No last-access times | `fsutil behavior set disablelastaccess 1`: user managed, so that Windows doesn't turn them back on | `golden-v10` |
 | No boot optimization | `EnableAutoLayout` 0 in `HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\OptimalLayout` | `golden-v9` |
 | No scheduled defrag | The task `\Microsoft\Windows\Defrag\ScheduledDefrag` disabled, and `fUpgradeRestored` 1 in `HKLM\SOFTWARE\Microsoft\Dfrg\TaskSettings`, so that it stays disabled | `golden-v8` |
+| No swap assessment | The task `\Microsoft\Windows\Sysmain\WsSwapAssessmentTask` disabled | `golden-v10` |
 | .NET's native images | Compiled: `ngen executeQueuedItems`, for .NET Framework 4's 32- and 64-bit | `golden-v7` |
 
+- **Last-access times were the most scattered.** Windows keeps them on volumes up to 128 GB ("System Managed"), and a client's is 64 GB. Maintenance reads files all over the disk: a new client read 18 GB in its first 25 minutes. For each file read, NTFS writes the time into the file's record and its directory's index. That's a 4 KB write in nearly every directory, and each one is a new 2 MB block: about 1,000 directories in 5 minutes, and about 1.3 GB of growth. Without them, opening 62,664 files in 18,606 directories wrote 30 MB.
 - **The boot optimization was the largest part found.** SysMain, the prefetcher, lists the files that start Windows and its apps in `Windows\Prefetch\Layout.ini`, and at the first maintenance has `defrag.exe -b` move them together at the start of the disk. That was some 6,600 files into the first 2 GB, and together with the scheduled defrag it accounted for about 3 GB of a child's growth to 7.5–8 GB ([results](#maintenance-results)). It doesn't go through the scheduled defrag task: with the task off, it still ran.
 - **The scheduled defrag task comes back unless `fUpgradeRestored` is set.** The first time `defrag.exe` runs after Windows setup, whatever runs it, it deletes its task and registers it again, enabled, then sets `fUpgradeRestored`. On `golden-v7`, with the task only disabled, something ran `defrag.exe` as maintenance started, most likely the boot optimization, and the task was back and running 20 seconds later. Its other setting there, `fTaskEnabled` 0, made no difference.
+- **The swap assessment** is SysMain's: its task runs `winsat.exe disk -wsswap` twice, and each run writes a 100 MB test file, then deletes it. 200 MB.
 - **.NET's native images** were 340 MB that each client compiled for itself.
-- **In the image, rather than Group Policy:** a client has it from its first start, and the native images can only be compiled once in the image. `clients/check.sh` shows a client's defrag settings.
-- **What's left: about 2.5 GB, not yet found.** A client on `golden-v9` still grows from 1.5 GB to about 4.3 GB at its first maintenance, mostly 4 to 9 minutes into it, and very little after. NTFS's change journal shows no file written in those minutes, and no defrag ran. It isn't the pagefile, which was unused, nor reads, last-access times or trims, each tried on a client. A disk I/O trace of a new client's first maintenance would show what it is. Of what's visible, the largest is a Windows App Runtime package, 170 MB, that maintenance installed in two rounds out of three.
+- **In the image, rather than Group Policy:** a client has it from its first start, and the native images can only be compiled once in the image. `clients/check.sh` shows a client's maintenance settings.
+- **What's left: about 1.5 GB, not yet found.** A client on `golden-v10` grows from 1.3 GB to 2.8–2.9 GB at its first maintenance, 4 to 9 minutes into it. In the trace, that was single small writes into some 500 directories, nearly all of Windows' apps and their assets (`Windows\SystemApps`, `SystemResources`, `ImmersiveControlPanel`, Edge's), and 175 blocks the trace couldn't name. Reading doesn't cause them any more (above), and on `golden-v9` NTFS's change journal had nothing for those minutes: so something records something about those files that the journal doesn't show. A trace of file operations, with the processes that make them, would show what.
 
 ## Removing a client
 
@@ -242,7 +248,7 @@ The plan's test for phase 4, 2026-10-12: `golden-v6` made from `golden-v5` by `i
 - **`image/change.sh`** took 13 minutes for `golden-v6`: the copy 2.5, while the clients ran on `golden-v5`; the build VM's first boot and Windows 5; the seal 4. 12.2 GB, as `golden-v5`.
 - **`remove-client.sh` and `new-client.sh` for dl-ws-3,** after the fix to its reservation, left no reservation or lease, then made both again.
 - **`image/remove.sh`** refused `golden-v6`, with its three disks, and deleted a sealed test image, whether SYSTEM or Administrators owned it.
-- **Windows' automatic maintenance grew a child disk.** dl-ws-1, left at its logon screen, grew from 1.08 GB to 6.96 GB within 20 minutes of its first boot, when Windows' idle maintenance ran. dl-ws-2, with a user logged on, was at 2.52 GB. Mostly fixed since `golden-v9` ([below](#maintenance-results)).
+- **Windows' automatic maintenance grew a child disk.** dl-ws-1, left at its logon screen, grew from 1.08 GB to 6.96 GB within 20 minutes of its first boot, when Windows' idle maintenance ran. dl-ws-2, with a user logged on, was at 2.52 GB. Mostly fixed since `golden-v10` ([below](#maintenance-results)).
 
 ### Restart results
 
@@ -258,21 +264,35 @@ The tests behind [When a server restarts](#when-a-server-restarts), 2026-10-12, 
 
 ### Maintenance results
 
-The tests behind [Automatic maintenance](#automatic-maintenance), 2026-10-12 and 13: three rounds, each with the three clients on new disks, started together and left at their logon screens. Their disks' sizes come from the storage server every 5 minutes, so the clients see nothing of it. Each image was `image/change.sh` from the one before, sealed straight away.
+The tests behind [Automatic maintenance](#automatic-maintenance), 2026-10-12 and 13: five rounds, each with clients on new disks, started together and left at their logon screens. Their disks' sizes come from the storage server every 5 minutes, so the clients see nothing of it. Each image was `image/change.sh` from the one before, sealed straight away.
 
-| Minutes from power-on | `golden-v6`: nothing changed (dl-ws-3, round 1) | `golden-v7`: native images; the defrag task disabled (dl-ws-1, dl-ws-2, round 1) | `golden-v8`: and the task stays disabled (all three, round 2) | `golden-v9`: and no boot optimization (all three, round 3) |
-|---|---|---|---|---|
-| 15: set up, maintenance not yet started | 1.55 GB | 1.50, 1.53 GB | 1.55–1.65 GB | 1.52–1.58 GB |
-| 25 | 7.02 | 7.00, 4.87 | 4.93–6.80 | 4.12–4.15 |
-| 45–50 | 7.96 | 7.78; dl-ws-2 used for tests | 5.58–7.83 | 4.30–4.40 |
+| Minutes from power-on | `golden-v6`: nothing changed (dl-ws-3, round 1) | `golden-v7`: native images; the defrag task disabled (dl-ws-1, dl-ws-2, round 1) | `golden-v8`: and the task stays disabled (all three, round 2) | `golden-v9`: and no boot optimization (all three, round 3) | `golden-v10`: and no last-access times or swap assessment (all three, round 5) |
+|---|---|---|---|---|---|
+| 15: set up, maintenance not yet started | 1.55 GB | 1.50, 1.53 GB | 1.55–1.65 GB | 1.52–1.58 GB | 1.27–1.36 GB |
+| 25 | 7.02 | 7.00, 4.87 | 4.93–6.80 | 4.12–4.15 | 2.77–2.83 |
+| 30 | 7.52 | 7.43, 5.53 | 5.55–7.43 | 4.24–4.37 | 2.80–2.92 |
+| 40–50, the last sample | 7.96 | 7.78; dl-ws-2 used for tests | 5.58–7.83 | 4.30–4.40 | 2.80 (dl-ws-2; the others used for tests) |
 
 - **Maintenance started 16 minutes after power-on in every round,** about 10 minutes after Windows: the scheduled tasks' last run times all show the same minute.
 - **`golden-v6`:** the scheduled defrag ran, with a boot optimization (event 258); the .NET tasks wrote 341 MB of native images.
 - **`golden-v7`:** no native images. But the defrag task was enabled again: at the start of maintenance, `NT AUTHORITY\System` deleted it and registered it again (Task Scheduler events 141, 106), and it ran 20 seconds later. Run by hand on a client, `defrag.exe C: /A` did the same whenever `fUpgradeRestored` wasn't set, and nothing once it was. With `fTaskEnabled` 0 it still registered the task enabled.
 - **`golden-v8`:** the task stayed disabled and never ran, yet a boot optimization still finished 4 minutes into maintenance. SysMain had just written `Layout.ini`, a list of some 6,600 files, and `defrag -b` had laid them out over the first 2 GB of the volume (`LcnEndLocation` 527,305 in `Dfrg\BootOptimizeFunction`).
-- **`golden-v9`:** no defrag of any kind: no event, and no `BootOptimizeFunction` key. SysMain still wrote `Layout.ini`. The disks still grew by 1.6–2.2 GB between minutes 20 and 25 ([what's left](#automatic-maintenance)). From minute 18 to 26, dl-ws-3's NTFS change journal had 124 records, all for small files: Defender's quick scan finishing, BITS's and the state repository's databases, an Update Orchestrator log. On dl-ws-1, no process still running had written more than 43 MB since boot.
-- **Tried on a client, without growth:** reading 7 GB of files, twice, an hour apart for last-access times; deleting a 471 MB file of the image; creating and deleting a 1 GB file that was never written.
-- **`golden-v7` to `golden-v9`** are 12.2 GB each, as `golden-v6`. With no change by hand, each took about 13 minutes.
+- **`golden-v9`:** no defrag of any kind: no event, and no `BootOptimizeFunction` key. SysMain still wrote `Layout.ini`. The disks still grew by 1.6–2.2 GB between minutes 20 and 25: mostly last-access times, as the trace below found. From minute 18 to 26, dl-ws-3's NTFS change journal had 124 records, all for small files: Defender's quick scan finishing, BITS's and the state repository's databases, an Update Orchestrator log. On dl-ws-1, no process still running had written more than 43 MB since boot.
+- **Tried on a client, without growth:** reading 7 GB of files, twice, an hour apart; deleting a 471 MB file of the image; creating and deleting a 1 GB file that was never written. The files read were large ones in small directories, whose records maintenance had written already.
+- **A disk I/O trace,** on dl-ws-3 on a new disk: `golden-v9` alone (round 4), then `golden-v10` with the other two (round 5). The kernel logger (`logman`, with disk I/O and file names) ran from a minute after Windows started until 26 minutes after, while the disk's own counter of bytes written (`Win32_PerfRawData_PerfDisk_PhysicalDisk`) was read at the start and the end. `tracerpt` made its report and a CSV of every write, with its offset, size and file:
+
+  | | `golden-v9` | `golden-v10` |
+  |---|---|---|
+  | Written to the disk, of it the trace's own file | 1,160 MB, 124 MB | 322 MB, 103 MB |
+  | The child's growth meanwhile | about 3.2 GB | about 1.7 GB |
+  | `$Mft` | 22,303 writes, 261 MB | 1,890 writes, 13 MB |
+  | The index of `WinSxS\Manifests` | 12,603 writes | 337 writes |
+  | 2 MB blocks first written 4 to 9 minutes into maintenance | 1,197: 1,030 by writes to 987 directories, of 4 KB or less; 102 by WinSAT's two test files; 62 with no name | 746: 566 by writes to 535 directories; 175 with no name |
+  | Read | 18.7 GB | 18.3 GB |
+
+  WinSAT's test files, `Windows\SystemTemp\TempWinSAT-Disk-*.tmp`, came from `winsat.exe disk -wsswap`, which SysMain's `WsSwapAssessmentTask` ran twice (WinSAT's log). The trace names writes by the kernel's file object, which is reused, so a name can be another file's.
+- **`golden-v10`, after its first maintenance:** opening and reading the start of all 62,664 files in `Windows\WinSxS`, in 18,606 directories, wrote 30 MB and grew the disk by 0.03 GB.
+- **`golden-v7` to `golden-v10`** are 12.2 GB each, as `golden-v6`. With no change by hand, each took about 13 minutes.
 
 ## Using it
 
