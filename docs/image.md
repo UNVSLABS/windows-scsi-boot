@@ -135,20 +135,22 @@ How the build gets the second NIC into the iBFT:
 
 [image/nic-test.sh](../image/nic-test.sh) tests a golden image on one client:
 - it gives a client a new differencing disk on the image;
-- then it applies a variant: `none`, `bootflags`, `bootstart`, or `netadapter` (WinPE on the client runs `/Add-NetAdapter` for its NIC on the disk, and sets `BootFlags` 1 on the NIC's service, copying WinPE's if the image has none);
+- then it applies a variant: `none`, `bootflags`, `bootstart`, `reflect` (the image's NIC driver packages reflected by DISM, [below](#reflecting-more-families-with-dism)), or `netadapter` (WinPE on the client runs `/Add-NetAdapter` for its NIC on the disk, and sets `BootFlags` 1 on the NIC's service, copying WinPE's if the image has none);
 - then it boots the client, and passes if Windows finishes its first boot within 20 minutes.
 
 The clients had three NIC models for the test: `dl-ws-1` virtio, `dl-ws-2` e1000e, `dl-ws-3` vmxnet3. `dl-ws-1` has had vmxnet3 since phase 3, which needs three clients that boot the image. On an image with the clients' first boot, `golden-v5` and later, every variant starts with that first boot, so `none` is the one to use.
 
 ### Results
 
-| Image | Client NIC | `none` | `netadapter` |
-|---|---|---|---|
-| `golden-v1`, built on an e1000e | e1000e, `net0`: the build NIC's model and slot, a new MAC | **Passed,** 2 minutes. The build VM's device and interface, kept by sysprep | |
-| | e1000e, moved to `net1`: a new slot | INACCESSIBLE_BOOT_DEVICE, a few minutes in | **Passed,** 2 minutes. The kernel set up the new device at boot |
-| | virtio, vmxnet3 | INACCESSIBLE_BOOT_DEVICE: their drivers are only staged | INACCESSIBLE_BOOT_DEVICE |
-| `golden-v3` and `golden-v4`, built on an e1000e with vmxnet3 as the second NIC | e1000e, `net0` | **Passed,** 2 minutes | |
-| | vmxnet3, `net0`: the second NIC was `net1` | | **Passed,** 3 minutes |
+| Image | Client NIC | `none` | `netadapter` | `reflect` |
+|---|---|---|---|---|
+| `golden-v1`, built on an e1000e | e1000e, `net0`: the build NIC's model and slot, a new MAC | **Passed,** 2 minutes. The build VM's device and interface, kept by sysprep | | |
+| | e1000e, moved to `net1`: a new slot | INACCESSIBLE_BOOT_DEVICE, a few minutes in | **Passed,** 2 minutes. The kernel set up the new device at boot | |
+| | virtio, vmxnet3 | INACCESSIBLE_BOOT_DEVICE: their drivers are only staged | INACCESSIBLE_BOOT_DEVICE | |
+| `golden-v3` and `golden-v4`, built on an e1000e with vmxnet3 as the second NIC | e1000e, `net0` | **Passed,** 2 minutes | | |
+| | vmxnet3, `net0`: the second NIC was `net1` | | **Passed,** 3 minutes | |
+| `golden-v10`, built like `golden-v4`, with the clients' first boot | vmxnet3, `net0`: setup's reflection of its package replaced by DISM's | | | **Passed,** 6 minutes |
+| | virtio, `net0`: NetKVM, which setup can't reflect | | | **Passed,** 5 minutes. A third NIC family |
 
 `golden-v3` was built with one-off scripts, `golden-v4` with the ones in this repo. `golden-v1` and `golden-v3` have since been deleted; `golden-v2`, a build whose iBFT had one NIC, too. `golden-v4` was deleted on 2026-10-12: it predates the clients' first boot, and `golden-v5` replaced it ([clients](clients.md#results)). `golden-v5` to `golden-v9` were deleted on 2026-10-13, once the clients were on `golden-v10` ([clients](clients.md#maintenance-results)).
 
@@ -162,7 +164,29 @@ Tested 2026-10-13, with one-off scripts. The build VM had three NICs, each reach
 | WinPE | The same table among the ACPI tables (`GetSystemFirmwareTable`), and all three disks connected |
 | Setup | `NICs in iBFT: 2; NICs resolved: 2`: the e1000e and vmxnet3. Both packages reflected, and `/Add-NetAdapter` for each. Nothing logged about the third |
 
-So setup takes the first two NICs, whatever they are: the third was skipped although its driver package, Intel's, was being reflected for the first. An earlier test, on 2026-10-11, had three families, e1000e, virtio and vmxnet3, and setup again counted two, leaving out vmxnet3, the third. A third family needs an image of its own, or a second family whose driver package covers more of the NICs wanted.
+So setup takes the first two NICs, whatever they are: the third was skipped although its driver package, Intel's, was being reflected for the first. An earlier test, on 2026-10-11, had three families, e1000e, virtio and vmxnet3, and setup again counted two, leaving out vmxnet3, the third. Through setup, a third family needs an image of its own, or a second family whose driver package covers more of the NICs wanted; DISM can reflect more ([below](#reflecting-more-families-with-dism)).
+
+### Reflecting more families with DISM
+
+Tested 2026-10-13 on `golden-v10`. Not yet part of a build or of the clients' first boot.
+
+**Why DISM only stages NIC drivers.** Windows keeps each driver package in one of two driver databases: the `SYSTEM` hive's, which the kernel reads while it boots, or the `DRIVERS` hive's, which it can't read until the boot disk is there (`golden-v10`: 274 and 441 packages, DISM's 715 between them). A package goes into the `SYSTEM` hive's, and is *configured* there (its service and a configuration for each device it lists), only if its device class is marked boot critical: the class property `DEVPKEY_DeviceClass_BootCritical`, in the registry as `Control\Class\{class}\Properties\{6a3433f4-5626-40e8-a9b9-dbd9ecd2884b}\0003`. SCSIAdapter has it; Net doesn't. A staged NIC package has neither a service nor a configuration: just its name and version. Setup forces the reflection for the NICs it takes from the iBFT: in `Windows\INF\setupapi.offline.log` it adds WinPE's copy of the package again, into the `SYSTEM` hive's database, and logs "Forcing driver package to be boot critical".
+
+**With the mark on the Net class, DISM does the same.** The `reflect` variant of [image/san/test-client.ps1](../image/san/test-client.ps1), on a new client disk:
+1. **The mark:** SCSIAdapter's `0003` copied to the Net class, in the disk's `SYSTEM` hive. Admins can't open a class's `Properties` key, so `reg.exe` does it as SYSTEM, through a one-off scheduled task.
+2. **The packages:** each NIC driver package that no installed adapter uses, removed (`dism /Remove-Driver`) and added again (`/Add-Driver`) from a copy of its files. The build NIC's package, which the build VM's adapter uses, stays as it is.
+3. **The mark removed.** The packages stay where DISM put them.
+4. **`BootFlags` 1 on the packages' services.** DISM writes a service afresh, without it, and Windows loads a network driver at boot only with it.
+
+The client's first boot then makes its interface, as for any other client ([clients](clients.md#the-first-boot)).
+
+| | `SYSTEM` hive's database | Service | Boot |
+|---|---|---|---|
+| vmxnet3, added by DISM without the mark | No: the `DRIVERS` hive's, with no configuration | Left from before | Not tried |
+| vmxnet3, with the mark | Yes, the same 95 keys as setup's reflection. Setup's alone has `SystemCritical` 1 | `vmxnet3ndis6` | **Passed** |
+| NetKVM, with the mark | Yes: 78 keys, no error | `netkvm`, its driver run from the driver store | **Passed,** with `/Add-NetAdapter` for it too |
+
+DISM reads the mark from the image: the storage server's own Net class doesn't have it.
 
 ## Building for one NIC family
 

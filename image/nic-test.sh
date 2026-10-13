@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Boot a golden image on a test client (PLAN.md, NIC independence; docs/image.md), from the PC in WSL with the Proxmox
 # token loaded as for Terraform:
-#   image/nic-test.sh <version> <client VM> [none|bootflags|bootstart|netadapter] [--keep]
+#   image/nic-test.sh <version> <client VM> [none|bootflags|bootstart|reflect|netadapter] [--keep]
 # The client gets a new differencing disk on golden-v<version>, changed for the variant (image/san/test-client.ps1;
 # netadapter: by WinPE on the client first, image/winpe/netadapter.cmd). It boots it, and passes if Windows finishes its
 # first boot within 20 minutes: the guest agent then reports IMAGE_STATE_COMPLETE. It prints the client's NIC and driver.
@@ -12,7 +12,7 @@ VERSION=${1:-}
 CLIENT=${2:-}
 VARIANT=${3:-none}
 KEEP=${4:-}
-[[ $VERSION =~ ^[0-9]+$ && -n $CLIENT && $VARIANT =~ ^(none|bootflags|bootstart|netadapter)$ &&
+[[ $VERSION =~ ^[0-9]+$ && -n $CLIENT && $VARIANT =~ ^(none|bootflags|bootstart|reflect|netadapter)$ &&
   (-z $KEEP || $KEEP == --keep) ]] || { sed -n '4p' "$0" >&2; exit 1; }
 cd "$(dirname "$0")/.."
 # shellcheck source=servers/remote.sh
