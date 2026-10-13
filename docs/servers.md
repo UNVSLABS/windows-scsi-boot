@@ -11,7 +11,7 @@ Phase 1 of the [plan](../PLAN.md): the domain controller hands out addresses and
 | DHCP | One scope with the network-boot policies ([below](#dhcp)) | — |
 | TFTP | WDS's TFTP server, serving `boot\x64\snponly.efi` from `C:\RemoteInstall`. WDS's PXE side answers no one ([below](#tftp-through-wds)) | — |
 | HTTP | IIS: `C:\BootFiles` as `http://10.31.0.10/boot/`, static files only | — |
-| iSCSI | — | iSCSI Target Server. The 200 GB data disk is `D:` (label `iSCSI`), with `D:\iSCSI\images` for golden images and `D:\iSCSI\clients` for child disks. A second address, 10.31.0.21, with its own portal, for the golden image build's second NIC ([image](image.md#nic-independence)). It's never a source address, so Windows doesn't register it in DNS |
+| iSCSI | — | iSCSI Target Server. The 200 GB data disk is `D:` (label `iSCSI`), with `D:\iSCSI\images` for golden images and `D:\iSCSI\clients` for child disks |
 | Windows Update | Downloads updates; installs them, and restarts, only when an admin says so | The same |
 
 `DISKLESS\admin` is a Domain Admin and Enterprise Admin. Its password, and the domain Administrator's, is the template's admin password.
@@ -42,7 +42,6 @@ WDS is deprecated from the next Windows Server release, but supported on 2025 fo
 | File | From | Used for |
 |---|---|---|
 | `snponly.efi` | iPXE v2.0.0, `ipxeboot.tar.gz` | The firmware loads it over TFTP. It drives the NIC through the firmware's own UEFI driver |
-| `ipxe.efi` | the same | iPXE with its own NIC drivers, which drives every NIC. The golden image build chains it, for its second NIC ([image](image.md#nic-independence)) |
 | `boot.ipxe` | [boot/boot.ipxe](../boot/boot.ipxe) | iPXE fetches it first. It chains `clients/<mac>.ipxe`, or `menu.ipxe` for machines that aren't clients |
 | `menu.ipxe` | [boot/menu.ipxe](../boot/menu.ipxe) | WinPE (`p`, phase 2), Memtest86+ (`m`), an iPXE shell (`s`), or the next boot device (`x`, the default after 30 s) |
 | `client.ipxe`, `build.ipxe` | [boot/](../boot) | A client's menu, and the build VM's boot during a build ([image](image.md)). A machine's own `clients/<mac>.ipxe` sets its disk and chains one of them |

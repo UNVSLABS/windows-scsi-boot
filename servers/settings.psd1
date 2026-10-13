@@ -32,15 +32,6 @@
   BuildVm      = 'dl-build-1'      # the Proxmox VM that builds images (lab/lab.auto.tfvars)
   IqnPrefix    = 'iqn.2026-10.com.unvslab.adl.diskless' # initiators are <IqnPrefix>:<VM name>
 
-  # A second NIC family the image boots through (docs/image.md, NIC independence): the build VM has it as net1 while
-  # setup runs in WinPE, reaching a second target through the storage server's second address, so that setup makes it a
-  # boot NIC of the image too. One: setup takes only the first two NICs in the iBFT. vmxnet3 is a stand-in for a second
-  # family of physical NICs, which would need the NIC passed through to the build VM. '' for none, and SanSecondAddress
-  # '' too (docs/image.md, Building for one NIC family).
-  BuildSecondNic    = 'vmxnet3'
-  BuildSecondNicMac = '02:00:0A:1F:01:FC' # 10.31.1.252's, as lab/main.tf makes MACs. It leases from the dynamic pool
-  SanSecondAddress  = '10.31.0.21'        # on the storage server's NIC as well, never a source address
-
   # The clients (clients/, docs/clients.md): their computer accounts' OU, and its Group Policy
   ClientOu   = 'Diskless clients'
   ClientGpo  = 'Diskless clients'

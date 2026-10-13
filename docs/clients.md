@@ -54,7 +54,7 @@ A client's NIC needs its network interface in the disk's Windows before Windows 
 1. Windows Boot Manager on the disk loads that WinPE into memory, from `Windows\Setup\Diskless\firstboot.wim` on the disk.
 2. WinPE connects the disk from the iBFT, as WinPE booted by iPXE does, and its startup ([image/winpe/startnet-firstboot.cmd](../image/winpe/startnet-firstboot.cmd)) runs [image/winpe/firstboot.ps1](../image/winpe/firstboot.ps1) from the disk:
    - it finds the NIC, the connected physical one;
-   - it checks that the image has the NIC's driver service, which setup made for each NIC family of the build. Without it, it stops: the image can't boot this NIC;
+   - it checks that the image has the NIC's driver service, which the image has for each NIC driver in its driver pack ([image](image.md#nic-independence)). Without it, it stops: the image can't boot this NIC;
    - if the image doesn't have the NIC itself, as a device in its `SYSTEM` hive, it runs `dism /Add-NetAdapter` for it;
    - it sets the boot manager's default back to Windows, takes its own entry out of the boot manager's list, and restarts.
 3. Windows boots, finishes setup, and joins the domain.

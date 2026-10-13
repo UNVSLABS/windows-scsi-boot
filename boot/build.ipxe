@@ -14,22 +14,7 @@ goto ${build-phase} || goto failed
 
 :setup
 echo Building a golden image on ${root-path}: WinPE and setup
-isset ${second-path} || goto one-nic
-# A second NIC (net1), whose model setup makes a boot NIC of the image too. iPXE puts a disk's NIC in the iBFT by routing
-# to its target, so a second, small disk goes through net1 to the storage server's second address, and each NIC has a
-# host route to its own (route0, route1). snponly.efi drives only the NIC it was loaded from, so the full iPXE runs this
-# again first: chained before anything is attached, as a failed boot of the blank disk first left an iBFT with one NIC.
-isset ${net1/mac} || chain --autofree ipxe.efi || goto failed
-dhcp net1 || goto failed
-set net1/gateway 0.0.0.0
-set net0/static-routes:hex ${route0}
-set net1/static-routes:hex ${route1}
-sanhook --drive 0x80 ${root-path} || goto failed
-sanhook --drive 0x81 ${second-path} || goto failed
-goto winpe
-:one-nic
 sanhook ${root-path} || goto failed
-:winpe
 kernel wimboot || goto failed
 initrd winpe/BCD BCD || goto failed
 initrd winpe/boot.sdi boot.sdi || goto failed

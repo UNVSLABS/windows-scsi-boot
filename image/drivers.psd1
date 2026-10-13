@@ -1,6 +1,7 @@
 # The driver pack (docs/image.md): drivers that go into WinPE and into the golden image. image/dc/prepare.ps1 downloads
 # each once into the install share's drivers\<Name>, checked against its pinned SHA-256. To take a new release, change
-# its entry and delete its folder, and C:\BootFiles\winpe so that WinPE is rebuilt with it. Physical NICs' packs go here.
+# its entry and delete its folder, and C:\BootFiles\winpe so that WinPE is rebuilt with it. Physical NICs' packs go here:
+# the image boots from every NIC that a NIC driver here covers (docs/image.md, NIC independence).
 @{
   Drivers = @(
     # virtio: the virtio clients' NIC and the other virtio devices. Fedora publishes no checksum; pinned 2026-10-03, as in the
@@ -16,9 +17,8 @@
     @{ Name = 'intel-82574l'
        Url = 'https://catalog.s.download.windowsupdate.com/c/msdownload/update/driver/drvs/2019/04/0_a11ef9665bab5977ed5a26de5b8f3dd7ef52aa2b.cab'
        Sha256 = 'AB558D1D14921C41251FF157DE250A5B6DEDFB89B5F5E1772060AE5DB3015539' }
-    # vmxnet3 1.9.21.0, from the Microsoft Update Catalog ("Broadcom Inc. Net Driver Update (1.9.21.0)"), the build's
-    # second NIC (servers/settings.psd1). It stands in for a second family of physical NICs, whose vendor driver would
-    # go here. Windows 11 has 1.8.17.0 inbox.
+    # vmxnet3 1.9.21.0, from the Microsoft Update Catalog ("Broadcom Inc. Net Driver Update (1.9.21.0)"): VMware's
+    # virtual NIC, which Proxmox VMs can have too. Windows 11 has 1.8.17.0 inbox.
     @{ Name = 'vmxnet3'
        Url = 'https://catalog.s.download.windowsupdate.com/d/msdownload/update/driver/drvs/2026/07/cf7c5218-fd6d-4f0f-b376-dde4c97289ca_604c6fab636da81ba79a6438ddad6f6a89eaadf6.cab'
        Sha256 = '4F8B5E1B18A848819BF2C2D8A8587C79CA2209CB9A648168F843C7423048D47C' }

@@ -17,20 +17,19 @@ echo Couldn't map \\@DC@\install
 goto failed
 :mapped
 
-rem The iBFT's disks: the build disk, and with a second NIC a small disk through it, @DISKS@ in all. WinPE connects them
-rem once the NICs' drivers have loaded, which can take a minute or two more. All of them, before setup reads the iBFT.
+rem The iBFT's disk, the build disk. WinPE connects it once the NIC's driver has loaded, which can take a minute or two
+rem more.
 for /l %%i in (1,1,36) do (
-  powershell -NoProfile -Command "exit [int](@(Get-Disk).Count -lt @DISKS@)" && goto disks
+  powershell -NoProfile -Command "exit [int](@(Get-Disk).Count -lt 1)" && goto disks
   ping -n 6 127.0.0.1 >nul
 )
-echo Not all @DISKS@ disks: WinPE didn't connect to every iSCSI target in the iBFT
+echo No disk: WinPE didn't connect to the iSCSI target in the iBFT
 powershell -NoProfile -Command "Get-Disk | Format-Table Number, FriendlyName, Size, BusType -AutoSize"
 goto diagnose
 :disks
 powershell -NoProfile -Command "Get-Disk | Format-Table Number, FriendlyName, Size, BusType -AutoSize"
 
-rem Setup installs onto the largest, the build disk, which needn't be disk 0: the answer file's DiskID 0 becomes its
-rem number, in a copy
+rem Setup installs onto the largest disk, the build disk: the answer file's DiskID 0 becomes its number, in a copy
 set DISK=
 for /f %%n in ('powershell -NoProfile -Command "(Get-Disk | Sort-Object Size | Select-Object -Last 1).Number"') do set DISK=%%n
 if not defined DISK (echo No disk number& goto failed)
@@ -73,8 +72,7 @@ for %%s in (e1iexpress e1i68x64 netkvm vmxnet3ndis6 iScsiPrt MSiSCSI Tcpip) do (
 )
 reg unload HKLM\diskless >nul
 type %LOG%
-rem Off, not restarted: build.sh takes the second NIC away before the new Windows' first boot, and sets the build VM's
-rem boot to that Windows
+rem Off, not restarted: build.sh sets the build VM's boot to the new Windows
 echo Powering off: image\build.sh then boots the new Windows
 ping -n 20 127.0.0.1 >nul
 wpeutil shutdown

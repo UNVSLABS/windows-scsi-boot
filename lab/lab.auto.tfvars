@@ -22,8 +22,9 @@ servers = {
   }
 }
 
-# The clients (clients/clients.csv). NIC models the golden image boots (PLAN.md, NIC independence; docs/image.md):
-# the build NIC's model at net0, which needs nothing on its first boot, and the second family's. Not virtio.
+# The clients (clients/clients.csv). The golden image boots every NIC model whose driver is in its driver pack (PLAN.md,
+# NIC independence; docs/image.md): e1000e, vmxnet3 and virtio. The build NIC's model at net0 needs nothing on its first
+# boot.
 clients = {
   "dl-ws-1" = { vm_id = 5031, address = "10.31.1.1", cores = 2, memory = 4096, nic_model = "vmxnet3" }
   "dl-ws-2" = { vm_id = 5032, address = "10.31.1.2", cores = 2, memory = 4096, nic_model = "e1000e" }
@@ -31,8 +32,7 @@ clients = {
 }
 
 # Builds golden images on the build target, through WinPE (image/build.sh). Its reservation is at the top of the range.
-# An Intel NIC: setup makes the build's NICs boot NICs of the image, and fails at that for virtio's (docs/image.md).
-# build.sh adds a second NIC (net1, servers/settings.psd1) only while setup runs, and removes it: not in Terraform.
+# An Intel NIC: setup makes the build's NIC a boot NIC of the image, and fails at that for virtio's (docs/image.md).
 build_vms = {
   "dl-build-1" = { vm_id = 5030, address = "10.31.1.250", cores = 4, memory = 4096, nic_model = "e1000e" }
 }

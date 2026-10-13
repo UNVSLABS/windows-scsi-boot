@@ -1,6 +1,7 @@
 # Seal a golden image once image/build.sh's build VM has powered off (docs/image.md): take it off the build target,
-# check that sysprep generalised it and that it has the clients' first boot (docs/clients.md), and make it read-only with
-# both the file attribute and its ACL. A write to a parent breaks every child disk on it. Run as admin. Safe to re-run.
+# check that sysprep generalised it and that it has the clients' first boot (docs/clients.md), make the driver pack's
+# NIC drivers boot drivers, and make it read-only with both the file attribute and its ACL. A write to a parent breaks
+# every child disk on it. Run as admin. Safe to re-run.
 param([Parameter(Mandatory)][int]$Version)
 #Requires -RunAsAdministrator
 $ErrorActionPreference = 'Stop'
@@ -20,7 +21,8 @@ if (Get-IscsiVirtualDisk -Path $path -ErrorAction SilentlyContinue) {
 
 Step 'generalised?'
 # Windows records its setup state in Windows\Setup\State\State.ini as well as in the registry
-$disk = Mount-DiskImage $path -Access ReadOnly -PassThru | Get-Disk
+$sealed = (Get-Item $path).IsReadOnly # by an earlier run, NIC drivers and all
+$disk = Mount-DiskImage $path -Access $(if ($sealed) { 'ReadOnly' } else { 'ReadWrite' }) -PassThru | Get-Disk
 try {
   if ($disk.IsOffline) { $disk | Set-Disk -IsOffline $false } # Windows Server's SAN policy can leave it offline
   $partition = $disk | Get-Partition | Where-Object { ($_ | Get-Volume).FileSystemLabel -eq 'Windows' }
@@ -35,6 +37,11 @@ try {
     if (-not (Test-Path "$firstBoot\$file")) { throw "golden-v$Version has no $firstBoot\${file}: no first boot for clients" }
   }
   "first boot: $([math]::Round((Get-Item "$firstBoot\firstboot.wim").Length / 1MB)) MB of WinPE"
+
+  Step 'NIC drivers, as boot drivers'
+  # Every NIC family in the driver pack, not only the build NIC's, which setup made a boot driver (docs/image.md, NIC
+  # independence)
+  if ($sealed) { 'sealed already' } else { Set-BootNicDrivers "$($partition.DriveLetter):" }
 } finally { Dismount-DiskImage $path | Out-Null }
 
 Step 'read-only'

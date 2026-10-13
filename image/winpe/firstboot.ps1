@@ -16,9 +16,9 @@ try {
   if (-not $nic) { throw 'no connected network adapter' }
   "NIC: $($nic.Name), $($nic.MACAddress), driver service $($nic.ServiceName), device $($nic.PNPDeviceID)"
 
-  # What the image has for it. Setup reflected the driver package of each NIC family in the build, with its service;
-  # sysprep kept the build's NICs themselves, interfaces included. A NIC is the same device only with the same model and
-  # PCI location (and PCIe serial number, where it has one).
+  # What the image has for it. The seal made each NIC driver in the driver pack a boot driver, with its service; sysprep
+  # kept the build's NIC itself, interface included. A NIC is the same device only with the same model and PCI location
+  # (and PCIe serial number, where it has one).
   reg load HKLM\diskless "$w\Windows\System32\config\SYSTEM" | Out-Null
   if ($LASTEXITCODE) { throw 'reg load failed' }
   try {
@@ -32,7 +32,7 @@ try {
     reg unload HKLM\diskless 2>&1 | Out-Null
   }
   if ($null -eq $start) {
-    throw "the image has no driver service $($nic.ServiceName): its build didn't have this NIC's family, so it can't boot from this NIC (docs/image.md, NIC independence)"
+    throw "the image has no driver service $($nic.ServiceName): its driver pack has no driver for this NIC, so it can't boot from it (docs/image.md, NIC independence)"
   }
   "image: driver service $($nic.ServiceName), Start $start, BootFlags $bootFlags"
 

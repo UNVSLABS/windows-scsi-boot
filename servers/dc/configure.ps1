@@ -12,10 +12,6 @@ $downloads = @(
   @{ Url = 'https://github.com/ipxe/ipxe/releases/download/v2.0.0/ipxeboot.tar.gz'
      Sha256 = '01A526D4CC791FC30362259C609D6C506CC64A7BDFF51B9A5EB788354E17EEE1'
      Member = 'ipxeboot/x86_64/snponly.efi'; As = 'snponly.efi' }
-  # The full iPXE, which drives every NIC: a golden image build with a second NIC chains it (boot/build.ipxe)
-  @{ Url = 'https://github.com/ipxe/ipxe/releases/download/v2.0.0/ipxeboot.tar.gz'
-     Sha256 = '01A526D4CC791FC30362259C609D6C506CC64A7BDFF51B9A5EB788354E17EEE1'
-     Member = 'ipxeboot/x86_64/ipxe.efi'; As = 'ipxe.efi' }
   @{ Url = 'https://github.com/ipxe/wimboot/releases/download/v2.9.0/wimboot'
      Sha256 = '5F067CCDC4D084D5BF77B6C853BD0F8402DFC2B4CD1B103D358993AE97FAE8E3'; As = 'wimboot' }
   # memtest.org publishes this hash too (download/v8.10/sha256sum.txt). The binary is also an x86-64 EFI application.

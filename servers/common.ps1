@@ -133,3 +133,98 @@ function Use-WindowsVolume([string]$Path, [scriptblock]$Action, [switch]$ReadOnl
     foreach ($t in $targets) { Add-IscsiVirtualDiskTargetMapping -TargetName $t -Path $Path }
   }
 }
+
+# reg.exe as SYSTEM, through a one-off scheduled task: admins can't open a device class's Properties key. Returns reg's
+# exit code.
+function Invoke-RegAsSystem([string]$Arguments) {
+  $task = 'diskless-reg'
+  $action = New-ScheduledTaskAction -Execute "$env:SystemRoot\System32\reg.exe" -Argument $Arguments
+  Register-ScheduledTask $task -Action $action -User 'NT AUTHORITY\SYSTEM' -RunLevel Highest -Force | Out-Null
+  try {
+    Start-ScheduledTask $task
+    $deadline = (Get-Date).AddMinutes(1)
+    while (($result = (Get-ScheduledTaskInfo $task).LastTaskResult) -in 0x41303, 0x41301) { # not run yet, running
+      if ((Get-Date) -gt $deadline) { throw "reg $Arguments didn't finish as SYSTEM" }
+      Start-Sleep -Milliseconds 500
+    }
+    $result
+  } finally { Unregister-ScheduledTask $task -Confirm:$false }
+}
+
+# On the storage server: make an offline Windows' NIC drivers boot drivers, so that it boots from any NIC the driver pack
+# covers (docs/image.md, NIC independence). $Volume is its Windows volume, such as 'E:'. The kernel sets up a NIC at boot
+# only from a driver package *reflected* into the SYSTEM hive's driver database, and Windows reflects a package only if
+# its device class is marked boot critical (DEVPKEY_DeviceClass_BootCritical). The Net class isn't, so DISM only stages
+# NIC drivers. So, for the third-party NIC packages that are only staged: the SCSIAdapter class's mark copied to the Net
+# class, each package removed and added again by DISM, which now reflects it, and the mark removed. Then BootFlags 1
+# (load at boot when booting from the network) on the services of all of them. Packages already reflected, by setup
+# for the build NIC or by an earlier run, are left as they are. Throws unless every one ends up reflected.
+function Set-BootNicDrivers([string]$Volume) {
+  $hive = 'HKLM\diskless-nics'
+  $mark = 'Properties\{6a3433f4-5626-40e8-a9b9-dbd9ecd2884b}\0003' # the class property, as Windows stores it
+  $scsiAdapter, $net = '{4d36e97b-e325-11ce-bfc1-08002be10318}', '{4d36e972-e325-11ce-bfc1-08002be10318}'
+  $copies = "$env:TEMP\diskless-nics"
+  # reg.exe only while the hive is loaded: the registry provider's handles would stop the unload
+  function Mount-SystemHive {
+    reg load $hive "$Volume\Windows\System32\config\SYSTEM" | Out-Null
+    if ($LASTEXITCODE) { throw "reg load $Volume's SYSTEM hive failed" }
+    $current = (reg query "$hive\Select" /v Current | Select-String 'REG_DWORD\s+0x([0-9a-f]+)').Matches[0].Groups[1].Value
+    "$hive\ControlSet{0:d3}" -f [Convert]::ToInt32($current, 16)
+  }
+  function Test-Reflected($package) { # in the SYSTEM hive's driver database, not the DRIVERS hive's
+    cmd /c "reg query $hive\DriverDatabase\DriverInfFiles\$($package.Driver) >nul 2>&1"
+    -not $LASTEXITCODE
+  }
+  function Get-NicPackages { @(Get-WindowsDriver -Path "$Volume\" | Where-Object ClassName -eq 'Net') } # DISM loads the hive
+
+  $packages = Get-NicPackages
+  $set = Mount-SystemHive
+  try { $staged = @($packages | Where-Object { -not (Test-Reflected $_) }) }
+  finally { reg unload $hive | Out-Null }
+
+  if ($staged) {
+    $set = Mount-SystemHive
+    try {
+      $code = Invoke-RegAsSystem "copy `"$set\Control\Class\$scsiAdapter\$mark`" `"$set\Control\Class\$net\$mark`" /s /f"
+      if ($code) { throw "the boot-critical mark on the Net class: reg exited with $code" }
+    } finally { reg unload $hive | Out-Null }
+    try {
+      Remove-Item $copies -Recurse -Force -ErrorAction SilentlyContinue
+      foreach ($p in $staged) {
+        $inf = Split-Path $p.OriginalFileName -Leaf
+        if (-not (Test-Path $p.OriginalFileName)) { throw "no $($p.OriginalFileName)" }
+        Copy-Item (Split-Path $p.OriginalFileName) "$copies\$($p.Driver)" -Recurse # its files, to add it again from
+        dism /English /Image:$Volume\ /Remove-Driver /Driver:$($p.Driver) | Out-Null
+        if ($LASTEXITCODE) { throw "dism /Remove-Driver $($p.Driver) ($inf) exited with $LASTEXITCODE" }
+        dism /English /Image:$Volume\ /Add-Driver /Driver:$copies\$($p.Driver)\$inf | Out-Null
+        if ($LASTEXITCODE) { throw "dism /Add-Driver $inf exited with $LASTEXITCODE" }
+      }
+    } finally {
+      Remove-Item $copies -Recurse -Force -ErrorAction SilentlyContinue
+      $set = Mount-SystemHive
+      try {
+        $code = Invoke-RegAsSystem "delete `"$set\Control\Class\$net\$mark`" /f"
+        if ($code) { throw "removing the Net class's boot-critical mark: reg exited with $code" }
+      } finally { reg unload $hive | Out-Null }
+    }
+  }
+
+  $packages = Get-NicPackages
+  $services = foreach ($p in $packages) {
+    dism /English /Image:$Volume\ /Get-DriverInfo /Driver:$($p.Driver) | Select-String 'Service Name : (\S+)' |
+      ForEach-Object { $_.Matches[0].Groups[1].Value }
+  }
+  $set = Mount-SystemHive
+  try {
+    foreach ($p in $packages) {
+      $inf = Split-Path $p.OriginalFileName -Leaf
+      if (-not (Test-Reflected $p)) { throw "$inf ($($p.Driver)) isn't reflected" }
+      "NIC driver: $inf $($p.Version), $($p.ProviderName): reflected$(if ($p.Driver -in $staged.Driver) { ' now' })"
+    }
+    foreach ($service in $services | Sort-Object -Unique) {
+      reg add "$set\Services\$service" /v BootFlags /t REG_DWORD /d 1 /f | Out-Null
+      if ($LASTEXITCODE) { throw "BootFlags on service $service failed" }
+      "NIC driver service: $service, BootFlags 1"
+    }
+  } finally { reg unload $hive | Out-Null }
+}

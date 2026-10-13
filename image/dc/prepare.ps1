@@ -11,8 +11,7 @@ param(
   [Parameter(Mandatory)][string]$Mac,          # the build VM's
   [Parameter(Mandatory)][string]$InitiatorIqn, # the build VM's, which the build target accepts
   [Parameter(Mandatory)][string]$TargetIqn,    # the build target's
-  [string]$SecondTargetIqn,                    # the second target's, when the build has a second NIC
-  [string]$Updates                             # "updates" to install Windows updates in the image
+  [string]$Updates                            # "updates" to install Windows updates in the image
 )
 #Requires -RunAsAdministrator
 $ErrorActionPreference = 'Stop'
@@ -145,9 +144,9 @@ if (-not (Test-Path $winpe)) {
         if (Test-Path $cab) { Add-WindowsPackage -Path $mount -PackagePath $cab | Out-Null }
       }
     }
-    # The pack's NIC drivers: WinPE reaches the iSCSI disks in the iBFT and the share through them, once plug and play
-    # has loaded them. Setup also makes the first two NICs in the iBFT boot NICs of the new Windows, with WinPE's
-    # drivers for them.
+    # The pack's NIC drivers: WinPE reaches the iSCSI disk in the iBFT and the share through them, once plug and play
+    # has loaded them. Setup also makes the iBFT's NIC, the build VM's, a boot NIC of the new Windows, with WinPE's
+    # driver for it; the seal makes the rest of the pack's NIC drivers boot drivers (image/san/seal.ps1).
     $nics = Get-ChildItem "$share\drivers" -Recurse -Filter *.inf | Where-Object { Select-String -Path $_.FullName -Pattern '^\s*Class\s*=\s*Net\b' -Quiet }
     foreach ($inf in $nics) {
       Add-WindowsDriver -Path $mount -Driver $inf.FullName | Out-Null
@@ -192,7 +191,6 @@ $values = @{
   IMAGE_INDEX = $s.ImageIndex; PRODUCT_KEY = $s.ProductKey; LOCALE = $s.Locale; UI_LANGUAGE = $s.UILanguage
   TIMEZONE = $s.TimeZone; USER = $s.ImageUser; PASSWORD = $password
   DC = $s.DcAddress; SAN = $s.SanAddress; ACCOUNT = $account; SHARE_PASSWORD = $sharePassword
-  DISKS = $(if ($SecondTargetIqn) { 2 } else { 1 }) # the iBFT's, which WinPE waits for
 }
 # On the share: the answers, which hold the image's password, readable only by admins and the share's account
 $build = "$share\build"
@@ -215,19 +213,16 @@ $id = $Mac.ToLower() -replace ':', '-' # as iPXE's ${net0/mac:hexhyp}, and the D
 $job = "$($s.BootFiles)\jobs\$id.cmd"
 New-Item -ItemType Directory -Force (Split-Path $job) | Out-Null
 Expand-Template "$root\image\winpe\build.cmd" $job $values -Cmd
-# The build VM's own script, for setup: the build's disks, then the build's boot (boot/build.ipxe); and its reservation
-& "$PSScriptRoot\build-script.ps1" $Mac $InitiatorIqn $TargetIqn setup -SecondTargetIqn $SecondTargetIqn
+# The build VM's own script, for setup: the build disk, then the build's boot (boot/build.ipxe); and its reservation
+& "$PSScriptRoot\build-script.ps1" $Mac $InitiatorIqn $TargetIqn setup
 $address = (($Mac -split ':')[2..5] | ForEach-Object { [Convert]::ToInt32($_, 16) }) -join '.'
 
 Step 'check'
 # What the build VM fetches, as iPXE fetches it: anonymously
-$paths = 'build.ipxe', "clients/$id.ipxe", "jobs/$id.cmd", 'winpe/boot.wim', 'winpe/BCD', 'wimboot'
-if ($SecondTargetIqn) { $paths += 'ipxe.efi' } # from servers/dc/configure.ps1
-foreach ($path in $paths) {
+foreach ($path in 'build.ipxe', "clients/$id.ipxe", "jobs/$id.cmd", 'winpe/boot.wim', 'winpe/BCD', 'wimboot') {
   $url = "http://$($s.DcAddress)/boot/$path"
   $response = Invoke-WebRequest $url -UseBasicParsing -Method Head
   if ($response.StatusCode -ne 200) { throw "$url returned HTTP $($response.StatusCode)" }
 }
 "build VM: $($s.BuildVm), $Mac, reserved $address, initiator $InitiatorIqn"
 "target: $TargetIqn"
-if ($SecondTargetIqn) { "second target: $SecondTargetIqn, through $($s.SanSecondAddress)" }
