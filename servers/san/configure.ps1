@@ -1,4 +1,4 @@
-# Configure the storage server once join.ps1 has joined it to the domain (PLAN.md, phase 1; docs/servers.md): iSCSI
+# Configure the storage server once join.ps1 has joined it to the domain (docs/requirements.md): iSCSI
 # Target Server, and its data disk for golden images and child disks. Run as admin, from a copy of the repo's servers/
 # (setup.sh makes it, and runs this again after a restart it asks for). Safe to re-run.
 #Requires -RunAsAdministrator

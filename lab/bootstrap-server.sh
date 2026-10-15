@@ -66,7 +66,7 @@ if [[ $out == *restarting* ]]; then
   wait_ready 600
 fi
 # The check doubles as a smoke test of the clone's Windows: on a host with faulty memory, clones read corrupted
-# system files, and their PowerShell couldn't load NetTCPIP (docs/environment.md)
+# system files, and their PowerShell couldn't load NetTCPIP
 # shellcheck disable=SC2016 # $env is PowerShell's
 now=$(guest_ps '"$env:COMPUTERNAME " + (Get-NetIPAddress -AddressFamily IPv4 -PrefixOrigin Manual).IPAddress' | tr -d '\r\n')
 log "now: $now"

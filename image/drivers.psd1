@@ -1,7 +1,8 @@
-# The driver pack (docs/image.md): drivers that go into WinPE and into the golden image. image/dc/prepare.ps1 downloads
-# each once into the install share's drivers\<Name>, checked against its pinned SHA-256. To take a new release, change
-# its entry and delete its folder, and C:\BootFiles\winpe so that WinPE is rebuilt with it. Physical NICs' packs go here:
-# the image boots from every NIC that a NIC driver here covers (docs/image.md, NIC independence).
+# The driver pack (docs/golden-image.md): drivers that go into WinPE and into the golden image. image/dc/prepare.ps1
+# downloads each once into the install share's drivers\<Name>, checked against its pinned SHA-256. To take a new
+# release, change its entry and delete its folder, and C:\BootFiles\winpe so that WinPE is rebuilt with it. Physical
+# NICs' packs go here: the image boots from every NIC that a NIC driver here covers (docs/golden-image.md, Booting from
+# any NIC).
 @{
   Drivers = @(
     # virtio: the virtio clients' NIC and the other virtio devices. Fedora publishes no checksum; pinned 2026-10-03, as in the

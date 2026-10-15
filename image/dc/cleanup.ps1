@@ -1,6 +1,6 @@
-# Remove a build's files from the domain controller when image/build.sh ends, however it ends (docs/image.md): the
-# answer files on the install share, and the build VM's WinPE job and iPXE script over HTTP, which hold passwords; and
-# the share's account, disabled with a new password. Run as admin. Safe to re-run.
+# Remove a build's files from the domain controller when image/build.sh ends, however it ends (docs/golden-image.md):
+# the answer files on the install share, and the build VM's WinPE job and iPXE script over HTTP, which hold passwords;
+# and the share's account, disabled with a new password. Run as admin. Safe to re-run.
 param([Parameter(Mandatory)][string]$Mac) # the build VM's
 #Requires -RunAsAdministrator
 $ErrorActionPreference = 'Stop'

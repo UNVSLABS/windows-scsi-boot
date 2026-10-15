@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Change a golden image into a new version (PLAN.md, Client lifecycle; docs/image.md), from the PC in WSL, with the
+# Change a golden image into a new version (docs/golden-image.md), from the PC in WSL, with the
 # Proxmox token loaded as for Terraform. Two steps, with the changes in between:
 #   image/change.sh <version> [<from version>]   golden-v<version>, a copy of golden-v<from> (the newest sealed one
 #                                                unless given), started on the build VM for the changes

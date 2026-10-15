@@ -1,4 +1,4 @@
-# Configure the domain controller once promote.ps1 has made it one (PLAN.md, phase 1; docs/servers.md): DNS, DHCP with
+# Configure the domain controller once promote.ps1 has made it one (docs/requirements.md): DNS, DHCP with
 # the network-boot policies, TFTP through WDS and HTTP through IIS for the boot files. Run as the domain's
 # Administrator, from a copy of the repo's servers/ and boot/ (setup.sh makes it, and runs this again after a restart it
 # asks for). Safe to re-run.

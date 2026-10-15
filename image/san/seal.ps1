@@ -1,7 +1,7 @@
-# Seal a golden image once image/build.sh's build VM has powered off (docs/image.md): take it off the build target,
-# check that sysprep generalised it and that it has the clients' first boot (docs/clients.md), make the driver pack's
-# NIC drivers boot drivers, and make it read-only with both the file attribute and its ACL. A write to a parent breaks
-# every child disk on it. Run as admin. Safe to re-run.
+# Seal a golden image once image/build.sh's build VM has powered off (docs/golden-image.md): take it off the build
+# target, check that sysprep generalised it and that it has the clients' first boot (docs/clients.md), make the driver
+# pack's NIC drivers boot drivers, and make it read-only with both the file attribute and its ACL. A write to a parent
+# breaks every child disk on it. Run as admin. Safe to re-run.
 param([Parameter(Mandatory)][int]$Version)
 #Requires -RunAsAdministrator
 $ErrorActionPreference = 'Stop'
@@ -39,8 +39,8 @@ try {
   "first boot: $([math]::Round((Get-Item "$firstBoot\firstboot.wim").Length / 1MB)) MB of WinPE"
 
   Step 'NIC drivers, as boot drivers'
-  # Every NIC family in the driver pack, not only the build NIC's, which setup made a boot driver (docs/image.md, NIC
-  # independence)
+  # Every NIC family in the driver pack, not only the build NIC's, which setup made a boot driver
+  # (docs/golden-image.md, Booting from any NIC)
   if ($sealed) { 'sealed already' } else { Set-BootNicDrivers "$($partition.DriveLetter):" }
 } finally { Dismount-DiskImage $path | Out-Null }
 

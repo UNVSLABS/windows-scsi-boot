@@ -1,6 +1,6 @@
 # Generalise the golden image with sysprep, add the clients' first boot (firstboot-entry.ps1), then power off
-# (docs/image.md). First, the part of Windows' automatic maintenance that each client would otherwise do for itself.
-# Run once as SYSTEM at the startup after firstlogon.ps1, or after reseal.ps1 when an image is changed, from
+# (docs/golden-image.md). First, the part of Windows' automatic maintenance that each client would otherwise do for
+# itself. Run once as SYSTEM at the startup after firstlogon.ps1, or after reseal.ps1 when an image is changed, from
 # C:\Windows\Setup\build. image/build.sh and change.sh wait for the build VM to stop. If sysprep fails, the VM stays on
 # for a look. Log: C:\Windows\Temp\generalize.log
 $ErrorActionPreference = 'Stop'
@@ -16,7 +16,7 @@ if ((Get-Command Get-BitLockerVolume -ErrorAction SilentlyContinue) -and (Get-Bi
 
 # Windows' automatic maintenance runs in a client's first idle minutes, and everything it writes lands in the client's
 # own child disk: a whole 2 MB block for each part of the disk it first writes to, so small writes spread over the disk
-# grow it by gigabytes (docs/clients.md, Automatic maintenance). So:
+# grow it by gigabytes (docs/golden-image.md, Keeping clients' disks small). So:
 # - no last-access times: as maintenance reads files all over the disk, NTFS writes each one's last-access time into
 #   its directory's index, a small write in nearly every directory. User managed, so Windows doesn't turn it back on;
 # - no boot optimization: SysMain, the prefetcher, has defrag.exe -b move the files that start Windows and apps

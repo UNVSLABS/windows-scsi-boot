@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Create the Proxmox pool, roles, user and ACLs that this repo's Terraform runs as (PLAN.md, phase 0). Run as root on
+# Create the Proxmox pool, roles, user and ACLs that this repo's Terraform runs as (docs/lab.md). Run as root on
 # any node of the cluster. Safe to re-run. Override the defaults through the environment, e.g. VLAN=40 pve-setup.sh.
-# The API token is made separately, so its secret never reaches a terminal (docs/environment.md).
+# The API token is made separately, so its secret never reaches a terminal (docs/lab.md).
 set -euo pipefail
 
 POOL=${POOL:-diskless}

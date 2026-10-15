@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Boot a golden image on a test client (PLAN.md, NIC independence; docs/image.md), from the PC in WSL with the Proxmox
+# Boot a golden image on a test client (docs/golden-image.md, Booting from any NIC), from the PC in WSL with the Proxmox
 # token loaded as for Terraform:
 #   image/nic-test.sh <version> <client VM> [none|bootflags|bootstart|reflect|netadapter] [--keep]
 # The client gets a new differencing disk on golden-v<version>, changed for the variant (image/san/test-client.ps1;

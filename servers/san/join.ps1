@@ -1,6 +1,6 @@
-# Join the storage server to the domain (PLAN.md, phase 1). Takes the password of the domain account <NetbiosName>\admin
-# from servers\secret.txt. Run as admin, from a copy of the repo's servers/ (setup.sh makes it, and runs this again after
-# the restart). Done once it prints "already in".
+# Join the storage server to the domain (docs/requirements.md). Takes the password of the domain account
+# <NetbiosName>\admin from servers\secret.txt. Run as admin, from a copy of the repo's servers/ (setup.sh makes it, and
+# runs this again after the restart). Done once it prints "already in".
 #Requires -RunAsAdministrator
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'

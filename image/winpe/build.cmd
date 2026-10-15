@@ -1,9 +1,9 @@
 @echo off
-rem WinPE's job on the build VM (docs/image.md). image\dc\prepare.ps1 fills in the @...@ values and serves this from the
-rem domain controller as jobs\<mac>.cmd while a build runs, and WinPE fetches and runs it (image\winpe\startnet.cmd).
-rem It installs Windows from the install share onto the iSCSI disk that iPXE attached, copies the first logon's files
-rem into the new Windows, and powers off. image\build.sh then boots that disk. On a failure it stops at a prompt, and
-rem build.sh times out.
+rem WinPE's job on the build VM (docs/golden-image.md). image\dc\prepare.ps1 fills in the @...@ values and serves this
+rem from the domain controller as jobs\<mac>.cmd while a build runs, and WinPE fetches and runs it
+rem (image\winpe\startnet.cmd). It installs Windows from the install share onto the iSCSI disk that iPXE attached,
+rem copies the first logon's files into the new Windows, and powers off. image\build.sh then boots that disk. On a
+rem failure it stops at a prompt, and build.sh times out.
 echo.
 echo Building a golden image: Windows setup from \\@DC@\install onto the iSCSI disk
 

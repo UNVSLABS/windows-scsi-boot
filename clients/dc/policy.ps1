@@ -1,4 +1,4 @@
-# The clients' OU and Group Policy (PLAN.md, phase 3; docs/clients.md), on the domain controller. clients/dc/new-client.ps1
+# The clients' OU and Group Policy (docs/clients.md), on the domain controller. clients/dc/new-client.ps1
 # runs this first; safe to re-run. The GPO, linked to the OU that New-Client puts computer accounts in:
 # - Windows Update off: updates come in new golden images, which keeps child disks small;
 # - no sleep, hibernation or fast startup: the disk is on the network, and fast startup is a hibernation;

@@ -151,14 +151,15 @@ function Invoke-RegAsSystem([string]$Arguments) {
   } finally { Unregister-ScheduledTask $task -Confirm:$false }
 }
 
-# On the storage server: make an offline Windows' NIC drivers boot drivers, so that it boots from any NIC the driver pack
-# covers (docs/image.md, NIC independence). $Volume is its Windows volume, such as 'E:'. The kernel sets up a NIC at boot
-# only from a driver package *reflected* into the SYSTEM hive's driver database, and Windows reflects a package only if
-# its device class is marked boot critical (DEVPKEY_DeviceClass_BootCritical). The Net class isn't, so DISM only stages
-# NIC drivers. So, for the third-party NIC packages that are only staged: the SCSIAdapter class's mark copied to the Net
-# class, each package removed and added again by DISM, which now reflects it, and the mark removed. Then BootFlags 1
-# (load at boot when booting from the network) on the services of all of them. Packages already reflected, by setup
-# for the build NIC or by an earlier run, are left as they are. Throws unless every one ends up reflected.
+# On the storage server: make an offline Windows' NIC drivers boot drivers, so that it boots from any NIC the driver
+# pack covers (docs/golden-image.md, Booting from any NIC). $Volume is its Windows volume, such as 'E:'. The kernel sets
+# up a NIC at boot only from a driver package *reflected* into the SYSTEM hive's driver database, and Windows reflects a
+# package only if its device class is marked boot critical (DEVPKEY_DeviceClass_BootCritical). The Net class isn't, so
+# DISM only stages NIC drivers. So, for the third-party NIC packages that are only staged: the SCSIAdapter class's mark
+# copied to the Net class, each package removed and added again by DISM, which now reflects it, and the mark removed.
+# Then BootFlags 1 (load at boot when booting from the network) on the services of all of them. Packages already
+# reflected, by setup for the build NIC or by an earlier run, are left as they are. Throws unless every one ends up
+# reflected.
 function Set-BootNicDrivers([string]$Volume) {
   $hive = 'HKLM\diskless-nics'
   $mark = 'Properties\{6a3433f4-5626-40e8-a9b9-dbd9ecd2884b}\0003' # the class property, as Windows stores it

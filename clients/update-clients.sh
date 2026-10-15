@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Move diskless clients to another golden image (PLAN.md, Client lifecycle; docs/clients.md), from the PC in WSL or Git
+# Move diskless clients to another golden image (docs/clients.md), from the PC in WSL or Git
 # Bash, while they're off:
 #   clients/update-clients.sh <golden image version> [<name>...]
 # Every client in clients/clients.csv that has a disk, or those named. Each gets a new disk on that image, made as

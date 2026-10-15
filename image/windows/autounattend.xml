@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Unattended install of the golden image onto the iSCSI disk (docs/image.md). image/dc/prepare.ps1 fills in the @...@
-     values and puts this on the install share as build\autounattend.xml, which holds the image's password until the build
-     ends. WinPE's startnet.cmd runs setup with it, with the share mapped as Z:. -->
+<!-- Unattended install of the golden image onto the iSCSI disk (docs/golden-image.md). image/dc/prepare.ps1 fills in
+     the @...@ values and puts this on the install share as build\autounattend.xml, which holds the image's password
+     until the build ends. WinPE's startnet.cmd runs setup with it, with the share mapped as Z:. -->
 <unattend xmlns="urn:schemas-microsoft-com:unattend" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">
   <settings pass="windowsPE">
     <!-- The display language has to be one the media has, or setup stops to ask. -->

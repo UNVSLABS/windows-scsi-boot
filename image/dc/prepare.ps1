@@ -1,5 +1,4 @@
-# Prepare the domain controller for a golden image build, and publish the build's files (PLAN.md, phase 2;
-# docs/image.md):
+# Prepare the domain controller for a golden image build, and publish the build's files (docs/golden-image.md):
 # - the Windows ADK and its WinPE add-on, and WinPE with the driver pack, served as http://<dc>/boot/winpe/boot.wim;
 #   and the same WinPE for clients' first boot, winpe/firstboot.wim, which the build puts into the golden image;
 # - the install share, \\<dc>\install: the Windows media from the CD drive, the driver pack and the guest agent;

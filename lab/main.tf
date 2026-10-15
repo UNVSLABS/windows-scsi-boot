@@ -1,6 +1,6 @@
-# The lab for diskless Windows boot (PLAN.md): a domain controller and a storage server cloned from a Windows Server
+# The lab for diskless Windows boot (docs/lab.md): a domain controller and a storage server cloned from a Windows Server
 # 2025 template, and empty diskless clients that boot from the network. The environment's values are in
-# lab.auto.tfvars. The provider's endpoint and token come from the environment (docs/environment.md):
+# lab.auto.tfvars. The provider's endpoint and token come from the environment (docs/lab.md):
 #   . ~/.config/proxmox/diskless.env && terraform apply
 
 terraform {
@@ -41,7 +41,7 @@ variable "clients" {
     address   = string
     cores     = number
     memory    = number # MiB
-    nic_model = string # virtio, e1000e, vmxnet3, ... (PLAN.md, NIC independence)
+    nic_model = string # virtio, e1000e, vmxnet3, ... (docs/golden-image.md, Booting from any NIC)
   }))
 }
 

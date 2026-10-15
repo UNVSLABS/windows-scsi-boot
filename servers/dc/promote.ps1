@@ -1,6 +1,6 @@
-# Promote the domain controller to the first domain controller of a new forest (PLAN.md, phase 1). Takes the Directory
-# Services Restore Mode password from servers\secret.txt. Run as admin, from a copy of the repo's servers/ and boot/
-# (setup.sh makes it, and runs this again after each restart). Done once it prints "already a domain controller".
+# Promote the domain controller to the first domain controller of a new forest (docs/requirements.md). Takes the
+# Directory Services Restore Mode password from servers\secret.txt. Run as admin, from a copy of the repo's servers/ and
+# boot/ (setup.sh makes it, and runs this again after each restart). Done once it prints "already a domain controller".
 #Requires -RunAsAdministrator
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'

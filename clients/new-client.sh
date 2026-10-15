@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Make a diskless client (PLAN.md, Client lifecycle; docs/clients.md), from the PC in WSL or Git Bash:
+# Make a diskless client (docs/clients.md), from the PC in WSL or Git Bash:
 #   clients/new-client.sh <name> [<golden image version>]
 # Its MAC and address come from clients/clients.csv; the golden image is the newest sealed one unless given.
 #   1 domain controller  the clients' OU and Group Policy, a DHCP reservation, and the client's computer account with an

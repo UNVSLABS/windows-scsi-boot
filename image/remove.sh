@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Delete a golden image from the storage server (docs/image.md), from the PC in WSL or Git Bash:
+# Delete a golden image from the storage server (docs/golden-image.md), from the PC in WSL or Git Bash:
 #   image/remove.sh <version>
 # Refused while any disk is on it, a client's (clients/update-clients.sh moves them to another image) or a test's, or
 # while the build VM runs it. So it also drops a build or change that isn't finished, once the build VM is off.

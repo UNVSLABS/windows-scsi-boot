@@ -1,7 +1,7 @@
-# A client's first boot (PLAN.md, Client lifecycle; docs/clients.md). WinPE, booted as a RAM disk by Windows Boot Manager
+# A client's first boot (docs/clients.md). WinPE, booted as a RAM disk by Windows Boot Manager
 # from the client's own disk, makes the client's NIC a boot NIC of the Windows on that disk: dism /Add-NetAdapter, which
-# Windows setup runs for the build's NICs (docs/image.md, NIC independence). Then it sets the boot manager's default back
-# to Windows, and restarts. The golden image's build puts this, WinPE and the boot entry into the image
+# Windows setup runs for the build's NICs (docs/golden-image.md, Booting from any NIC). Then it sets the boot manager's
+# default back to Windows, and restarts. The golden image's build puts this, WinPE and the boot entry into the image
 # (image/windows/firstboot-entry.ps1), so each new child disk does this on its first boot, on whatever machine boots it.
 # WinPE's startup (image/winpe/startnet-firstboot.cmd) runs it from the disk. Log: Windows\Temp\firstboot.log on the
 # disk. On a failure, WinPE stops at a prompt, and the boot entry stays the default: the next start tries again.
@@ -32,7 +32,7 @@ try {
     reg unload HKLM\diskless 2>&1 | Out-Null
   }
   if ($null -eq $start) {
-    throw "the image has no driver service $($nic.ServiceName): its driver pack has no driver for this NIC, so it can't boot from it (docs/image.md, NIC independence)"
+    throw "the image has no driver service $($nic.ServiceName): its driver pack has no driver for this NIC, so it can't boot from it (docs/golden-image.md, Booting from any NIC)"
   }
   "image: driver service $($nic.ServiceName), Start $start, BootFlags $bootFlags"
 

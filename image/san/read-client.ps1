@@ -1,5 +1,5 @@
-# Print files from a test client's disk once it's off, for image/nic-test.sh (docs/image.md): logs that WinPE or Windows
-# wrote there, when Windows can't be reached. Run as admin. Paths are relative to the disk's Windows volume.
+# Print files from a test client's disk once it's off, for image/nic-test.sh (docs/golden-image.md): logs that WinPE or
+# Windows wrote there, when Windows can't be reached. Run as admin. Paths are relative to the disk's Windows volume.
 param(
   [Parameter(Mandatory)][string]$Name,
   [Parameter(Mandatory)][string[]]$File

@@ -1,4 +1,4 @@
-# A blank golden image on the build target, for image/build.sh (docs/image.md): <data drive>:\iSCSI\images\
+# A blank golden image on the build target, for image/build.sh (docs/golden-image.md): <data drive>:\iSCSI\images\
 # golden-v<version>.vhdx, a dynamic VHDX on target "build", which accepts only the build VM's initiator. Prints the
 # target's IQN. Run as admin. An unfinished build of the same version is replaced; a finished, read-only one is refused.
 param(

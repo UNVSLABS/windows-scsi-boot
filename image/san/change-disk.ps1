@@ -1,4 +1,4 @@
-# A golden image to change, for image/change.sh (PLAN.md, Client lifecycle; docs/image.md): golden-v<version>.vhdx, a
+# A golden image to change, for image/change.sh (docs/golden-image.md): golden-v<version>.vhdx, a
 # copy of golden-v<from> (the newest sealed one unless given) that can be written, on the build target, which accepts
 # only the build VM's initiator. Prints the target's IQN. If golden-v<version> is there already and not sealed, a change
 # that was started and not sealed yet, it goes on the target as it is. Run as admin, while the build VM is off.

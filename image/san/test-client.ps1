@@ -1,4 +1,4 @@
-# A test client's disk for image/nic-test.sh (PLAN.md, NIC independence; docs/image.md): a new differencing disk
+# A test client's disk for image/nic-test.sh (docs/golden-image.md, Booting from any NIC): a new differencing disk
 # <data drive>:\iSCSI\clients\<name>.vhdx on golden-v<version>, on target <name>, which accepts only the client's
 # initiator. For three of the variants, it also changes the disk's Windows before its first boot:
 #   bootflags   BootFlags 1 (load when booting from the network) on the services of the image's network adapters

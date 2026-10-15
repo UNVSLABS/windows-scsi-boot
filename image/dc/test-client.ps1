@@ -1,5 +1,5 @@
-# A test client's boot for image/nic-test.sh (docs/image.md): its clients/<mac>.ipxe on the domain controller, and its
-# WinPE job, jobs/<mac>.cmd. Mode:
+# A test client's boot for image/nic-test.sh (docs/golden-image.md): its clients/<mac>.ipxe on the domain controller,
+# and its WinPE job, jobs/<mac>.cmd. Mode:
 #   windows      its menu (boot/client.ipxe), which boots Windows from its disk
 #   netadapter   WinPE with its disk attached. Its job (image/winpe/netadapter.cmd) makes the client's NIC a boot NIC of
 #                the Windows on that disk, then powers off.

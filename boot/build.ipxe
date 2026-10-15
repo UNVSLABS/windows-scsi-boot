@@ -1,7 +1,7 @@
 #!ipxe
-# The build VM's boot while image/build.sh builds a golden image (docs/image.md). Its own script, clients/<mac>.ipxe,
-# which build.sh writes for each phase of the build (image/dc/build-script.ps1), sets initiator-iqn, root-path (the
-# build target) and build-phase, then chains this:
+# The build VM's boot while image/build.sh builds a golden image (docs/golden-image.md). Its own script,
+# clients/<mac>.ipxe, which build.sh writes for each phase of the build (image/dc/build-script.ps1), sets initiator-iqn,
+# root-path (the build target) and build-phase, then chains this:
 #   setup    WinPE, with the blank build disk attached. WinPE fetches the build's job, jobs/<mac>.cmd, which installs
 #            Windows onto the disk and powers off.
 #   windows  the disk's Windows, which provisions itself, then sysprep powers off.

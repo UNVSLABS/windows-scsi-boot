@@ -1,6 +1,6 @@
-# Clients' new domain joins on the domain controller, for clients/update-clients.sh (PLAN.md, Client lifecycle;
-# docs/clients.md). First the clients' OU and Group Policy (policy.ps1), and the boot scripts (boot/*.ipxe), so that a
-# change to them lands with the update.
+# Clients' new domain joins on the domain controller, for clients/update-clients.sh (docs/clients.md). First the
+# clients' OU and Group Policy (policy.ps1), and the boot scripts (boot/*.ipxe), so that a change to them lands with the
+# update.
 # Then for each client, given as its row of clients.csv, "<name>,<mac>,<address>": its DHCP reservation, as
 # new-client.ps1 makes it; and its offline domain join again (client.ps1), which keeps its computer account and resets
 # the account's machine password. So only for clients that are off: a running client would lose its trust with the

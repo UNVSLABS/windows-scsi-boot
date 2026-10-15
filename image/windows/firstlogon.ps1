@@ -1,7 +1,7 @@
-# First-logon provisioning of the golden image (docs/image.md), run once by autounattend.xml from C:\Windows\Setup\build,
-# where WinPE copied it. Installs the QEMU guest agent, OpenSSH, updates if there's a file `updates` here, and RDP, and
-# sets the iSCSI timeout. Then it sets generalize.ps1 to run at the next startup and restarts. The drivers are already
-# in: setup added the driver pack.
+# First-logon provisioning of the golden image (docs/golden-image.md), run once by autounattend.xml from
+# C:\Windows\Setup\build, where WinPE copied it. Installs the QEMU guest agent, OpenSSH, updates if there's a file
+# `updates` here, and RDP, and sets the iSCSI timeout. Then it sets generalize.ps1 to run at the next startup and
+# restarts. The drivers are already in: setup added the driver pack.
 # Log: C:\Windows\Temp\firstlogon.log
 $ErrorActionPreference = 'Stop'
 Start-Transcript C:\Windows\Temp\firstlogon.log

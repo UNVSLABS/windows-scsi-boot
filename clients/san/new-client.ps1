@@ -1,4 +1,4 @@
-# A new client's disk on the storage server, for clients/new-client.sh (PLAN.md, Client lifecycle; docs/clients.md):
+# A new client's disk on the storage server, for clients/new-client.sh (docs/clients.md):
 # a differencing disk <data drive>:\iSCSI\clients\<name>.vhdx on a golden image, the newest sealed one unless given, with
 # the client's computer name and its offline domain join (from servers\secret.txt) in the disk's answer file
 # (clients/san/disk.ps1); and target <name>, which accepts only the client's initiator. Prints the target's IQN. Run as

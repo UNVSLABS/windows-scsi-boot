@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # The Proxmox API, with the token from the environment (PROXMOX_VE_ENDPOINT and PROXMOX_VE_API_TOKEN, as for Terraform:
-# docs/environment.md), for bootstrap-server.sh and image/*.sh, which source this. The VM functions act on $NODE and
+# docs/lab.md), for bootstrap-server.sh and image/*.sh, which source this. The VM functions act on $NODE and
 # $VMID, which find_vm sets. Needs curl, python3 and iconv.
 
 pve() { # pve <GET|POST> <path under /api2/json> [curl argument...]: print the response's data as JSON

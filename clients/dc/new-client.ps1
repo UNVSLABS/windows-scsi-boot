@@ -1,4 +1,4 @@
-# A new client's part on the domain controller, for clients/new-client.sh (PLAN.md, Client lifecycle; docs/clients.md):
+# A new client's part on the domain controller, for clients/new-client.sh (docs/clients.md):
 # - the clients' OU and Group Policy (policy.ps1);
 # - a DHCP reservation for the client's MAC;
 # - its computer account in that OU, with an offline domain join: djoin /provision, with /reuse, so that a client keeps

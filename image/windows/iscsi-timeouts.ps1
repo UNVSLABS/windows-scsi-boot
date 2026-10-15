@@ -1,5 +1,5 @@
-# How long the golden image's Windows waits for its iSCSI disk while the storage server is away (docs/clients.md, The
-# storage server). Windows' iSCSI initiator holds a disk's requests for 60 seconds by default while it reconnects
+# How long the golden image's Windows waits for its iSCSI disk while the storage server is away (docs/operations.md,
+# The storage server). Windows' iSCSI initiator holds a disk's requests for 60 seconds by default while it reconnects
 # (MaxRequestHoldTime), then fails them, which takes down a client that boots from the disk. At 10 minutes, clients
 # pause while the storage server restarts, and carry on. (The disk's own timeout, TimeOutValue, didn't need changing:
 # clients at 60 waited out 3.4 minutes.) Run in the image: by firstlogon.ps1 in a build, or as admin in a change

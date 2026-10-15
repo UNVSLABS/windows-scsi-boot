@@ -1,5 +1,5 @@
 """Turn `pveum user token add ... --output-format json` on stdin into an env file for Terraform's bpg provider, on
-stdout. Pipe it straight into the file, so the secret is never shown (docs/environment.md):
+stdout. Pipe it straight into the file, so the secret is never shown (docs/lab.md):
     token-env.py <endpoint, e.g. https://pve.example.com:8006/>"""
 import json, sys
 

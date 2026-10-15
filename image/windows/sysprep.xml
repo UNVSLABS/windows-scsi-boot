@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Answers for a client's first boot from the golden image (docs/image.md): a random computer name, and no OOBE
+<!-- Answers for a client's first boot from the golden image (docs/golden-image.md): a random computer name, and no OOBE
      questions. image/dc/prepare.ps1 fills in the @...@ values. The build's account stays, but Windows 11 still asks for
      one unless it's named here too. Windows replaces the passwords in its cached copy once they're used. -->
 <unattend xmlns="urn:schemas-microsoft-com:unattend" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">

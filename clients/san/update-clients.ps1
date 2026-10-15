@@ -1,5 +1,5 @@
-# Clients moved to another golden image on the storage server, for clients/update-clients.sh (PLAN.md, Client
-# lifecycle; docs/clients.md), in two steps, around the domain controller's:
+# Clients moved to another golden image on the storage server, for clients/update-clients.sh (docs/clients.md),
+# in two steps, around the domain controller's:
 #   take <version> <name>...  For each client: skipped if it has no target here, or its disk is on golden-v<version>
 #                             already; refused if it's running, which is a session on its target. Otherwise its disk
 #                             comes off its target, so that it can't start while the disk is replaced, and it prints

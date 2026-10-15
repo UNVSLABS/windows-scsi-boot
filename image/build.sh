@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build golden image <version>, golden-v<version>.vhdx (PLAN.md, phase 2; docs/image.md), from the PC in WSL, with the
+# Build golden image <version>, golden-v<version>.vhdx (docs/golden-image.md), from the PC in WSL, with the
 # Proxmox token loaded as for Terraform:
 #   . ~/.config/proxmox/diskless.env && image/build.sh <version> [--updates]
 # The build VM network-boots WinPE, which installs Windows from the domain controller's install share onto a blank disk

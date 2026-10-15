@@ -1,5 +1,5 @@
 # The build VM's own iPXE script, clients/<mac>.ipxe on the domain controller, for one phase of image/build.sh's build
-# (docs/image.md). It sets the build's disks and phase, then chains boot/build.ipxe:
+# (docs/golden-image.md). It sets the build's disks and phase, then chains boot/build.ipxe:
 #   setup    WinPE, with the blank build disk attached
 #   windows  the Windows on the build disk: the one setup installed, or a golden image being changed (image/change.sh)
 # And the build VM's DHCP reservation. Run as admin, by image/dc/prepare.ps1 for setup, and by build.sh and change.sh

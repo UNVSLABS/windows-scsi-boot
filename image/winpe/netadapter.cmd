@@ -1,9 +1,9 @@
 @echo off
-rem WinPE's job on a test client for image\nic-test.sh's netadapter variant (docs/image.md), served as jobs\<mac>.cmd
-rem by image\dc\test-client.ps1. It makes the NIC that WinPE booted with a boot NIC of the Windows on the client's iSCSI
-rem disk, as Windows setup does when it installs onto iSCSI: DISM's /Add-NetAdapter, which Microsoft doesn't document,
-rem and BootFlags 1 on the NIC driver's service. Then it powers off, and nic-test.sh boots Windows from the disk. Log:
-rem Windows\Temp\netadapter.log on that disk.
+rem WinPE's job on a test client for image\nic-test.sh's netadapter variant (docs/golden-image.md), served as
+rem jobs\<mac>.cmd by image\dc\test-client.ps1. It makes the NIC that WinPE booted with a boot NIC of the Windows on the
+rem client's iSCSI disk, as Windows setup does when it installs onto iSCSI: DISM's /Add-NetAdapter, which Microsoft
+rem doesn't document, and BootFlags 1 on the NIC driver's service. Then it powers off, and nic-test.sh boots Windows
+rem from the disk. Log: Windows\Temp\netadapter.log on that disk.
 
 rem The Windows on the iSCSI disk. WinPE connects the disk from the iBFT once the NIC's driver has loaded, which can take
 rem a minute or two.

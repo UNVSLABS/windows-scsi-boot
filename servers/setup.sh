@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Configure the lab's Windows servers (PLAN.md, phase 1; docs/servers.md) over SSH, from the PC in Git Bash or WSL:
+# Configure the lab's Windows servers (docs/requirements.md) over SSH, from the PC in Git Bash or WSL:
 #   setup.sh dc     promote the domain controller to a new forest, then DNS, DHCP, TFTP and HTTP
 #   setup.sh san    join the storage server to the domain, then iSCSI Target Server and its data disk
 # Run dc first. Reads ADMIN_PASSWORD and DSRM_PASSWORD from .env at the repo root (.env.example). Safe to re-run:

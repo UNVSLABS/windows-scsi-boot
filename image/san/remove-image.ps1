@@ -1,7 +1,7 @@
-# Delete golden-v<version>.vhdx from the storage server, for image/remove.sh (docs/image.md). Refuses while a disk has
-# it as its parent, or a VM runs it: a build or change, on the build target. A sealed image's ACL lets admins only read
-# it, but they can clear its read-only attribute, and the folder lets them delete it: whether SYSTEM owns it (a build's)
-# or Administrators (a change's copy). Then the golden images that are left. Run as admin. Safe to re-run.
+# Delete golden-v<version>.vhdx from the storage server, for image/remove.sh (docs/golden-image.md). Refuses while a
+# disk has it as its parent, or a VM runs it: a build or change, on the build target. A sealed image's ACL lets admins
+# only read it, but they can clear its read-only attribute, and the folder lets them delete it: whether SYSTEM owns it
+# (a build's) or Administrators (a change's copy). Then the golden images that are left. Run as admin. Safe to re-run.
 param([Parameter(Mandatory)][int]$Version)
 #Requires -RunAsAdministrator
 $ErrorActionPreference = 'Stop'

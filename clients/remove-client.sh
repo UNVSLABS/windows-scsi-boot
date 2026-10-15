@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Remove a diskless client (PLAN.md, Client lifecycle; docs/clients.md), from the PC in WSL or Git Bash:
+# Remove a diskless client (docs/clients.md), from the PC in WSL or Git Bash:
 #   clients/remove-client.sh <name>
 # The reverse of new-client.sh. The storage server first: the client's target and disk, refused while the client is
 # running (clients/san/remove-client.ps1). Then the domain controller: its boot script, DHCP reservation, DNS records and

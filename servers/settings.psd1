@@ -1,5 +1,5 @@
-# This environment's values for the Windows servers (PLAN.md, Target environment). Change them for yours. The
-# addresses must match lab/lab.auto.tfvars.
+# This environment's values for the Windows servers (docs/scripts.md, Settings and secrets). Change them for yours.
+# The addresses must match lab/lab.auto.tfvars.
 @{
   DomainName   = 'diskless.adl.unvslab.com'
   NetbiosName  = 'DISKLESS'
@@ -19,7 +19,7 @@
   TftpRoot     = 'C:\RemoteInstall' # WDS's, which its TFTP server serves
   SanDataDrive = 'D'               # on the storage server: images and child disks under D:\iSCSI
 
-  # The golden image (image/, docs/image.md)
+  # The golden image (image/, docs/golden-image.md)
   InstallShare = 'C:\Install'      # on the domain controller, shared as \\<DcAddress>\install for WinPE
   ShareAccount = 'winpe'           # the domain account WinPE maps the share with. Enabled only during a build
   ImageIndex   = '1'               # Windows 11 Enterprise LTSC 2024, in the media's install.wim

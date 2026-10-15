@@ -1,4 +1,4 @@
-# Seal a changed golden image again, for image/change.sh --seal (PLAN.md, Client lifecycle; docs/image.md). Runs as
+# Seal a changed golden image again, for image/change.sh --seal (docs/golden-image.md). Runs as
 # admin over SSH on the build VM, in the Windows of the image being changed, with the image's password in
 # servers\secret.txt. It leaves in C:\Windows\Setup\build what a build leaves there for generalize.ps1: the answers for
 # clients' first boot (sysprep.xml, which holds the password), and the clients' first boot itself, the image's own WinPE
